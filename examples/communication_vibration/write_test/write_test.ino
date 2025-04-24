@@ -13,15 +13,9 @@ void setup() {
     Nach dem Upload "RST" drücken um den Bootmode zu verlassen.
   */
   dezibot.begin();
-  dezibot.motion.detection.begin();
   //dezibot.motion.detection.end();
   // put your setup code here, to run once:
-  Serial.begin(115200);
 
-  // wait for user input for program to start
-  dezibot.display.print("setting up");
-  while(!Serial.available());
-  dezibot.display.clear();
   dezibot.display.print("setup done");
 }
 
@@ -62,12 +56,6 @@ void loop() {
     }  
   }
   
-  // print only acceleration for the Serial plotter of the IDE
-  // Serial.println(dezibot.motion.detection.getAcceleration().z);
-
-  // print accelearation and time in CSV format
-  Serial.println(String(millis()) + "; " + String(dezibot.motion.detection.getAcceleration().z));
-
   // delay until next measurement is taken
   delay(accelerationMeasurementTimeStepsMs);
 }
