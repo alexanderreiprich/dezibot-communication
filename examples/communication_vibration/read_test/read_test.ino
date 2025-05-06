@@ -14,6 +14,7 @@ void setup() {
   */
   dezibot.begin();
   dezibot.motion.detection.begin();
+  dezibot.shake.detection.begin()
   //dezibot.motion.detection.end();
   // put your setup code here, to run once:
   Serial.begin(115200);
