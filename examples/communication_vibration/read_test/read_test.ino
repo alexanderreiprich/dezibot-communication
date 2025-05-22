@@ -14,19 +14,19 @@ void setup() {
   */
   dezibot.begin();
   dezibot.motion.detection.begin();
-  dezibot.shake.detection.begin()
   //dezibot.motion.detection.end();
   // put your setup code here, to run once:
-  Serial.begin(115200);
+  // Serial.begin(115200);
 
   // wait for user input for program to start
   dezibot.display.print("setting up");
-  while(!Serial.available());
+  // while(!Serial.available());
   dezibot.display.clear();
   dezibot.display.print("setup done");
 }
 
 void loop() {
   // print accelearation and time in CSV format
-  Serial.println(String(millis()) + "; " + String(dezibot.motion.detection.getAcceleration().z));
+  // Serial.println(String(millis()) + "; " + String(dezibot.motion.detection.getAcceleration().z));
+  dezibot.display.print(String(dezibot.motion.detection.getAcceleration().z));
 }
