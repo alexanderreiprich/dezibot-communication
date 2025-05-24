@@ -1,5 +1,6 @@
 # automatic gernerated source
 docs/*
+node_modules/
 
 # Prerequisites
 *.d

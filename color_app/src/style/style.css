@@ -1,0 +1,77 @@
+body {
+	background-color: lightblue;
+	display: flex;
+	justify-content: center;
+	overflow: hidden;
+}
+
+p, label, input, button {
+	font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+	font-size: 17pt;
+}
+
+fieldset {
+	margin-top: 10px;
+	margin-bottom: 10px;
+}
+
+fieldset > div {
+	padding-top: 5px;
+	padding-bottom: 5px;
+}
+
+#squares {
+	display: flex;
+	flex-direction: column;
+	width: 60vw;
+	height: 60vw;
+	margin: 0 auto;
+}
+
+#squares > div {
+	display: flex;
+	flex: 1;
+}
+
+#squares > div > div {
+	flex: 1;
+	margin: 1px;
+	border-radius: 4px;
+	transition: background-color 0.3s ease;
+}
+
+#squares > div > div:hover {
+	filter: brightness(1.1);
+}
+
+#actions {
+	margin-left: 10px;
+}
+
+#actions > p {
+	font-size: 25pt;
+	color: black;
+	background-color: white;
+	height: fit-content;
+	padding-left: 5px;
+	padding-right: 5px;
+	border-width: 2px;
+	border-radius: 5px;
+}
+
+#algoActions {
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	height: 100px;
+}
+
+#algoActions > * {
+	margin-bottom: 10px;
+}
+
+.selected  {
+	width: calc(var(--squareSize) * 1.5);
+	height: calc(var(--squareSize) * 1.5);
+	transform: rotate(10deg);
+}
