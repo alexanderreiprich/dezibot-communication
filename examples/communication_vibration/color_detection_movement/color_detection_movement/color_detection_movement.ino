@@ -31,7 +31,7 @@ void loop() {
     dezibot.display.print("green, move anti-clockwise");
     dezibot.motion.rotateAntiClockwise(500);
   }
-  else if ((colorValueBlue > colorValueRed) && (colorValueBlue > colorValueGreen) && (colorValueBlue > colorValueWhite / 2)) {
+  else if ((colorValueBlue > colorValueRed) && (colorValueBlue > colorValueGreen) && (colorValueBlue > colorValueWhite / 3)) {
     dezibot.display.print("blue, move both");
     dezibot.motion.move(500);
   }
