@@ -39,6 +39,18 @@ export class Visual {
 				let newInnerDiv = document.createElement("div");
 				newInnerDiv.id = i + "" + k;
 				newInnerDiv.style.backgroundColor = "#" + squares[i][k];
+				if (squares[i][k] == "ff0000") {
+					newInnerDiv.innerHTML = "<-";
+				}
+				else if (squares[i][k] == "00ff00") {
+					newInnerDiv.innerHTML = "->";
+				}
+				else if (squares[i][k] == "0000ff") {
+					newInnerDiv.innerHTML = "^";
+				}
+				else {
+					newInnerDiv.innerHTML = "";
+				}
 				// newInnerDiv.addEventListener("click", function () { parentThis.swapTiles(_field, ({x: Number(this.id.charAt(0)), y: Number(this.id.charAt(1))})); });
 				newInnerDiv.addEventListener("click", function () { 
 					parentThis.cycleColorsOfTile(_field, ({x: Number(this.id.charAt(0)), y: Number(this.id.charAt(1))})); 
