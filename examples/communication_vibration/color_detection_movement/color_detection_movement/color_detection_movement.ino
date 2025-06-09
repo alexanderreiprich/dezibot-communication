@@ -24,6 +24,12 @@ void loop() {
   printValue(VEML_BLUE, "B");
   printValue(VEML_WHITE, "W");
 
+  uint16_t frontLight = dezibot.lightDetection.getValue(DL_FRONT);
+
+  dezibot.display.print("frontLight");
+  dezibot.display.print(" ");
+  dezibot.display.println(frontLight);
+
   if (colorValueWhite < 1200){
     dezibot.display.print("silent mode");
     dezibot.motion.stop();
