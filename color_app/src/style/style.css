@@ -35,7 +35,6 @@ fieldset > div {
 
 #squares > div > div {
 	flex: 1;
-	transition: background-color 0.3s ease;
 }
 
 #squares > div > div:hover {
