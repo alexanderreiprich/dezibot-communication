@@ -11,13 +11,15 @@ void setup() {
 }
 
 void loop() {
+  dezibot.motion.stop();
   Serial.println("");
   dezibot.display.clear();
-  getStrongestLight(TIME_SPAN);
+  uint16_t strongestLightValue = getStrongestLight(TIME_SPAN);
+  moveToLight(TIME_SPAN);
   delay(10000);
 }
 
-void getStrongestLight(unsigned long duration) {
+uint16_t getStrongestLight(unsigned long duration) {
   unsigned long startTime = millis();
   uint16_t maxLightValue = 0;
   unsigned long timeOfMax = 0;
@@ -37,7 +39,6 @@ void getStrongestLight(unsigned long duration) {
     delay(READ_DELAY);
   }
 
-  // Display result
   dezibot.display.clear();
   dezibot.display.print("Max Light: ");
   dezibot.display.println(maxLightValue);
@@ -45,4 +46,28 @@ void getStrongestLight(unsigned long duration) {
   dezibot.display.print("At: ");
   dezibot.display.print(timeOfMax);
   dezibot.display.println(" ms");
+  return maxLightValue;
+}
+
+void moveToLight(uint16_t duration) {
+  unsigned long startTime = millis();
+  uint16_t strongestLightValue = dezibot.lightDetection.getValue(DL_FRONT);
+  while (millis() - startTime < duration) {
+    dezibot.display.clear();
+    dezibot.motion.stop();
+    uint16_t currentFrontLight = dezibot.lightDetection.getValue(DL_FRONT);
+    if(strongestLightValue*8/10 > currentFrontLight){
+      dezibot.display.print(strongestLightValue);
+      dezibot.display.println(" > ");
+      dezibot.display.print(currentFrontLight);
+      dezibot.motion.right.setSpeed(8192);
+      delay(READ_DELAY);
+    }
+    else {
+      dezibot.motion.move(0, 8192);
+      dezibot.display.print("move");
+      delay(READ_DELAY);
+    }
+  }
+
 }
