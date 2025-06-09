@@ -1,7 +1,7 @@
 import { Field } from "./classes/Field";
 import { Visual } from "./classes/Visual";
 
-export let field: Field = new Field(10);
+export let field: Field = new Field(5);
 
 // Helper function for more readable code
 export function getId(_id: string): HTMLElement {
