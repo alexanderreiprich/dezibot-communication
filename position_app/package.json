@@ -1,0 +1,17 @@
+{
+  "scripts": {
+    "start": "ts-node-dev --respawn --transpile-only ./src/main.ts",
+    "test": "jest --config ./src/jest.config.ts",
+    "build": "webpack"
+  },
+  "devDependencies": {
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.2",
+    "webpack": "^5.91.0",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "ts-node": "^10.9.1",
+    "ts-node-dev": "^2.0.0"
+  }
+}
