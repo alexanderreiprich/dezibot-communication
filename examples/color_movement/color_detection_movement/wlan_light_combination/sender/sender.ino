@@ -2,8 +2,8 @@
 #include <FastLED.h>
 #define NUM_LEDS 159
 #define DATA_PIN 23
-#define START_LED 59
-#define LIGHT_LENGTH 99
+#define START_LED 60
+#define LIGHT_LENGTH 98
 CRGB leds[NUM_LEDS];
 
 
@@ -11,7 +11,7 @@ int ledArray[LIGHT_LENGTH];
 int maxLightValue = -1;
 int maxLightLed = -1;
 
-const int cornerTopLeft = 59;
+const int cornerTopLeft = 60;
 const int cornerTopRight = 89;
 const int cornerBottomRight = 108;
 const int cornerBottomLeft = 138;
