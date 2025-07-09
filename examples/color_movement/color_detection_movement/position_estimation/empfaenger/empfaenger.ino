@@ -15,7 +15,6 @@
 #define NUMBER_OF_LEDS 98
 #define ACCEPTED_LIGHT_DIFF 20
 
-
 struct Coord {
   int x;
   int y;
@@ -42,17 +41,45 @@ Coord led_pos[NUMBER_OF_LEDS-1];
 void setup() {
   Serial.begin(115200);
   dezibot.begin();
-  setupLedPos();
+  dezibot.communication.begin();
+  dezibot.communication.setGroupNumber(5);
+  // setupLedPos();
   // initSurroundingLight();
   // getLights();
-  dezibot.display.println("get light in 5s");
-  delay(5000);
-  dezibot.display.clear();
-  updateCoordAndGlobalAngle();
+  // dezibot.display.println("get light in 5s");
+  // delay(5000);
+  // dezibot.display.clear();
+  // updateCoordAndGlobalAngle();
 
 }
 
 void loop() {
+  dezibot.communication.sendMessage("sides");
+  delay(30000);
+  // dezibot.communication.sendMessage("side 0");
+  // delay(5000);
+  // dezibot.communication.sendMessage("off");
+  // delay(5000);
+  // dezibot.communication.sendMessage("side 1");
+  // delay(5000);
+  // dezibot.communication.sendMessage("off");
+  // delay(5000);
+  // dezibot.communication.sendMessage("side 2");
+  // delay(5000);
+  // dezibot.communication.sendMessage("off");
+  // delay(5000);
+  // dezibot.communication.sendMessage("side 3");
+  // delay(5000);
+  // dezibot.communication.sendMessage("off");
+  // delay(5000);
+  // dezibot.communication.sendMessage("on 62");
+  // delay(5000);
+  // dezibot.communication.sendMessage("off");
+  // delay(5000);
+  // dezibot.communication.sendMessage("sides");
+}
+
+void receivedCallback(String &msg) {
 
 }
 
@@ -217,10 +244,17 @@ void updateCoordAndGlobalAngle(){
   int possibleLED = getPossibleLEDBasedOnCoordAndAngle(estimatedLocation);
   int surLight = dezibot.lightDetection.getValue(DL_FRONT);
   dezibot.display.println(surLight);
+
   // communicate to board -> turn on led
   // once it is safe that the led is turned on, check intensity
+
+  dezibot.communication.sendMessage("on " + String(possibleLED + LED_OFFSET));
+  delay(1000);
+
   int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
   dezibot.display.println(ledLight);
+  dezibot.communication.sendMessage("off " + String(possibleLED + LED_OFFSET));
+  delay(1000);
   // checks if LED is visible
   if(ledLight + ACCEPTED_LIGHT_DIFF > surLight) {
     // we can assume that the bot is generally in the estimated location and with the estimated angle and continue with a more accurate localization
@@ -234,8 +268,12 @@ void updateCoordAndGlobalAngle(){
       surLight = dezibot.lightDetection.getValue(DL_FRONT);
       bool right = true;
       int nextLed = getPossibleOtherLEDBasedOnCurrentLED(possibleLED, right);
+      
       // communicate to board that the nextLED should be switched on (the original led should be switched off!)
+      dezibot.communication.sendMessage("on " + String(nextLed + LED_OFFSET));
+      delay(1000);
       ledLight = dezibot.lightDetection.getValue(DL_FRONT);
+      
       if(ledLight + ACCEPTED_LIGHT_DIFF <= surLight) {
         right = false;
         // wrong direction - the led is outside of the visible area for the bot
@@ -337,14 +375,20 @@ void findBotInTheArena() {
   matchingLocationCount = 0;
   // communication to board
   // switch on all LEDs on each side;
-  int surLight = dezibot.lightDetection.getValue(DL_FRONT);
+  dezibot.communication.sendMessage("sides");
   // right, bottom, left, top
   int fullOnLights[4];
+  for (int i = 0; i < 4; i++) {
+    int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
+    fullOnLights[i] = ledLight;
+    delay(1000);
+  }
+
   int maxIndex = getMaxIndex(fullOnLights, 4);
   // now we know the general direction
   int startLed;
   int endLed;
-  // 28, 22, 28, 21 num pf leds for each side
+
   if(maxIndex == 0) {
     startLed = 0;
     endLed = X_LED_COUNT-1;
@@ -365,45 +409,27 @@ void findBotInTheArena() {
   leds[1] = startLed + round((endLed - startLed)/4);
   leds[2] = startLed + round((endLed - startLed)/2);
   leds[3] = startLed + round(3*(endLed - startLed)/4);
-  leds[4] = (endLed + 2) % NUMBER_OF_LEDS;
+  leds[4] = (endLed - 2);
+
+  String result = "[";
+  for (int i = 0; i < 5; i++) {
+    result += String(leds[i] + LED_OFFSET);
+    if (i < 4) result += ", ";
+  }
+  result += "]";
 
   // communicate list of leds to board
-  //...
+  dezibot.communication.sendMessage("leds " + result);
   // get lights and save them in ledLights
-  int ledLights [5];
+  int ledLights[5];
+  for (int k = 0; k < 5; k++) {
+    int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
+    ledLights[k] = ledLight;
+    delay(1000);
+  }
+
   int possibleLed = leds[getMaxIndex(ledLights, 5)];
   locateBotBasedOnLed(possibleLed);
-
-  
-}
-
-void locateBotBasedOnLed(int led) {
-  //first we get the location of the led
-  //turn of LED if it is on
-  Coord ledLoc = led_pos[led];
-  int surLight = dezibot.lightDetection.getValue(DL_FRONT);
-  // communicate to board -> turn on led
-  // once it is safe that the led is turned on, check intensity
-  int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
-  Location possibleLocation = Location{
-    Coord{ledLoc.x, ledLoc.y}, 0
-  };
-
-  if(locateDistantLocation(led, ledLight, surLight, possibleLocation, 1)){
-    return;
-  }
-  if(locateDistantLocation(led, ledLight, surLight, possibleLocation, 11)){
-    return;
-  }
-  int dir = getLEDSide(led);
-  if(dir == 1 || dir == 3) {
-    // for these dir, the bot can be further away
-    for(int d = 21, i <= MAX_Y -1 , i = i + 10)
-      if(locateDistantLocation(led, ledLight, surLight, possibleLocation, i)){
-        return;
-      }
-    }
-  }
 }
 
 bool locateDistantLocation(int led, int ledLight, int surLight, Location possibleLocation, int distance){
@@ -430,3 +456,40 @@ bool locateDistantLocation(int led, int ledLight, int surLight, Location possibl
   return findLocationInPossibleLocations();
 
 }
+void locateBotBasedOnLed(int led) {
+  //first we get the location of the led
+  //turn off LED if it is on
+  dezibot.communication.sendMessage("off");
+  delay(1000);
+
+  Coord ledLoc = led_pos[led];
+  int surLight = dezibot.lightDetection.getValue(DL_FRONT);
+
+
+  // communicate to board -> turn on led
+  // once it is safe that the led is turned on, check intensity
+  dezibot.communication.sendMessage("on " + String(led + LED_OFFSET));
+  delay(1000);
+
+  int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
+  Location possibleLocation = Location{
+    Coord{ledLoc.x, ledLoc.y}, 0
+  };
+
+  if(locateDistantLocation(led, ledLight, surLight, possibleLocation, 1)){
+    return;
+  }
+  if(locateDistantLocation(led, ledLight, surLight, possibleLocation, 11)){
+    return;
+  }
+  int dir = getLEDSide(led);
+  if(dir == 1 || dir == 3) {
+    // for these dir, the bot can be further away
+    for(int d = 21; d <= MAX_Y -1; d = d + 10) {
+      if(locateDistantLocation(led, ledLight, surLight, possibleLocation, d)){
+        return;
+      }
+    }
+  }
+}
+
