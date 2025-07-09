@@ -22,6 +22,8 @@ bool receivingFinalValue = false;
 bool timeSync = false;
 bool positionCheckInProgress = false;
 int timeDiff = 0;
+bool waitingForAck = false;
+String expectedAck = "";
 
 void setup() {
   Serial.begin(115200);
@@ -41,23 +43,6 @@ void setup() {
 void loop() {
 }
 
-void test(int firstLed, int secondLed) {
-  Serial.println(String(firstLed));
-  Serial.println(String(secondLed));
-  leds[firstLed] = CRGB::Black;
-  FastLED.show();
-  delay(35000);
-  leds[firstLed] = CRGB::White;
-  FastLED.show();
-  delay(5000);
-  leds[firstLed] = CRGB::Black;
-  leds[secondLed] = CRGB::White;
-  FastLED.show();
-  delay(10000);
-  leds[secondLed] = CRGB::Black;
-  FastLED.show();
-}
-
 void receivedCallback(String &msg) {
   Serial.println(msg);
   if (msg == "timesync") {
@@ -71,22 +56,32 @@ void receivedCallback(String &msg) {
     dezibot.communication.sendMessage(String(diff));
     timeSync = false;
   }
+}
 
-
-  // // maybe replace this with a json implementation
-  // leds[msg.toInt() + START_LED] = CRGB::White;
-  // FastLED.show();
-  // delay(10000);
-  // leds[msg.toInt() + START_LED] = CRGB::Black;
-  // FastLED.show();
-  // receivingFinalValue = false;
+void sendMessageWithAck(String msg, String ackMsg) {
+  waitingForAck = true;
+  expectedAck = ackMsg;
+  dezibot.communication.sendMessage(msg);
+  unsigned long startTime = millis();
+  while (waitingForAck) {
+    // Timeout
+    if (millis() - startTime > 3000) {
+      dezibot.communication.sendMessage(msg);
+      startTime = millis();
+    }
+    delay(10);
+  }
 }
 
 void receivedPositionCallback(String &msg) {
   Serial.println(msg);
+  if (msg == expectedAck) {
+    waitingForAck = false;
+    return;
+  }
   if (msg == "start") {
     if (!positionCheckInProgress) {
-      dezibot.communication.sendMessage("go");
+      sendMessageWithAck("go", "ack_go");
       positionCheckInProgress = true;
     }
   }
@@ -95,6 +90,7 @@ void receivedPositionCallback(String &msg) {
   }
   if (positionCheckInProgress) {
     if (msg == "off") {
+        sendMessageWithAck("off", "ack_off");
         turnOffEverything();
         return;
       }
@@ -123,6 +119,7 @@ void receivedPositionCallback(String &msg) {
         leds[numberStr.toInt()] = CRGB::White;
         Serial.println("turned on " + numberStr.toInt());
         FastLED.show();
+        sendMessageWithAck("on " + numberStr, "ack_on " + numberStr);
       }
       else if (msg.indexOf("off ") >= 0) {
         int offPos = msg.indexOf("off ");
@@ -130,12 +127,14 @@ void receivedPositionCallback(String &msg) {
         leds[numberStr.toInt()] = CRGB::Black;
         Serial.println("turned off " + numberStr.toInt());
         FastLED.show();
+        sendMessageWithAck("off " + numberStr, "ack_off " + numberStr);
       }
       else if (msg.indexOf("side ") >= 0) {
         int sidesPos = msg.indexOf("side ");
         String numberStr = msg.substring(sidesPos + 5);
         turnOnSides(numberStr.toInt());
         FastLED.show();
+        sendMessageWithAck("side " + numberStr, "ack_side " + numberStr);
       }
       else if (msg.indexOf("leds ") >= 0) {
         int arrayPos = msg.indexOf("leds ");
@@ -146,9 +145,11 @@ void receivedPositionCallback(String &msg) {
             Serial.println("turning on " + String(newLeds[i]));
             leds[newLeds[i]] = CRGB::White;
             FastLED.show();
+            sendMessageWithAck("on " + String(newLeds[i]), "ack_on " + String(newLeds[i]));
             delay(1000);
             leds[newLeds[i]] = CRGB::Black;
             FastLED.show();
+            sendMessageWithAck("off " + String(newLeds[i]), "ack_off " + String(newLeds[i]));
           }
         }
       }

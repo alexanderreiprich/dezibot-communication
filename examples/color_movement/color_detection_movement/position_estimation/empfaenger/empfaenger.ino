@@ -40,6 +40,24 @@ bool f = false;
 
 Coord led_pos[NUMBER_OF_LEDS-1];
 
+bool waitingForAck = false;
+String expectedAck = "";
+
+void sendMessageWithAck(String msg, String ackMsg) {
+  waitingForAck = true;
+  expectedAck = ackMsg;
+  dezibot.communication.sendMessage(msg);
+  unsigned long startTime = millis();
+  while (waitingForAck) {
+    // Timeout
+    if (millis() - startTime > 3000) { 
+      dezibot.communication.sendMessage(msg);
+      startTime = millis();
+    }
+    delay(10);
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   dezibot.begin();
@@ -61,11 +79,31 @@ void loop() {
 
 void receivedCallback(String &msg) {
   Serial.println(msg);
+  if (msg == expectedAck) {
+    waitingForAck = false;
+    return;
+  }
   if (msg == "go") {
     f = true;
     setupLedPos();
     updateCoordAndGlobalAngle();
-    dezibot.communication.sendMessage("end");
+    sendMessageWithAck("end", "ack_end");
+    sendMessageWithAck("ack_go", "ack_ack_go");
+  }
+  else if (msg == "off") {
+    sendMessageWithAck("ack_off", "ack_ack_off");
+  }
+  else if (msg.startsWith("on ")) {
+    sendMessageWithAck("ack_on " + msg.substring(3), "ack_ack_on " + msg.substring(3));
+  }
+  else if (msg.startsWith("side ")) {
+    sendMessageWithAck("ack_side " + msg.substring(5), "ack_ack_side " + msg.substring(5));
+  }
+  else if (msg.startsWith("off ")) {
+    sendMessageWithAck("ack_off " + msg.substring(4), "ack_ack_off " + msg.substring(4));
+  }
+  else if (msg.startsWith("leds ")) {
+    // Hier ggf. für jedes LED einzeln ein ACK schicken, falls nötig
   }
 }
 
@@ -240,12 +278,12 @@ void updateCoordAndGlobalAngle(){
   // communicate to board -> turn on led
   // once it is safe that the led is turned on, check intensity
 
-  dezibot.communication.sendMessage("on " + String(possibleLED + LED_OFFSET));
+  sendMessageWithAck("on " + String(possibleLED + LED_OFFSET), "ack_on " + String(possibleLED + LED_OFFSET));
   delay(3000);
 
   int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
   dezibot.display.println(ledLight);
-  dezibot.communication.sendMessage("off");
+  sendMessageWithAck("off", "ack_off");
   delay(1000);
   // checks if LED is visible
   if(ledLight + ACCEPTED_LIGHT_DIFF > surLight) {
@@ -262,7 +300,7 @@ void updateCoordAndGlobalAngle(){
       int nextLed = getPossibleOtherLEDBasedOnCurrentLED(possibleLED, right);
 
       // communicate to board that the nextLED should be switched on (the original led should be switched off!)
-      dezibot.communication.sendMessage("on " + String(nextLed + LED_OFFSET));
+      sendMessageWithAck("on " + String(nextLed + LED_OFFSET), "ack_on " + String(nextLed + LED_OFFSET));
       delay(1000);
       ledLight = dezibot.lightDetection.getValue(DL_FRONT);
       
@@ -273,7 +311,7 @@ void updateCoordAndGlobalAngle(){
         ledLight = dezibot.lightDetection.getValue(DL_FRONT);
         if(ledLight + ACCEPTED_LIGHT_DIFF <= surLight) {
           // this should've worked, since it didn't we need to locate the bot
-          dezibot.communication.sendMessage("off");
+          sendMessageWithAck("off", "ack_off");
           findBotInTheArena();
           return;
         }
@@ -282,7 +320,7 @@ void updateCoordAndGlobalAngle(){
       locatePossibleLocations(nextLed, ledLight, surLight, estimatedLocation);
       if(findLocationInPossibleLocations) {
         // we've found a match and the estimatedLocation has been updated
-        dezibot.communication.sendMessage("off");
+        sendMessageWithAck("off", "ack_off");
         return;
       }
       else {
@@ -291,7 +329,7 @@ void updateCoordAndGlobalAngle(){
         ledLight = dezibot.lightDetection.getValue(DL_FRONT);
         if(ledLight + ACCEPTED_LIGHT_DIFF <= surLight) {
           // this should've worked, since it didn't we need to locate the bot
-          dezibot.communication.sendMessage("off");
+          sendMessageWithAck("off", "ack_off");
           findBotInTheArena();
           return;
         }
@@ -299,7 +337,7 @@ void updateCoordAndGlobalAngle(){
       locatePossibleLocations(nextLed, ledLight, surLight, estimatedLocation);
       if(findLocationInPossibleLocations) {
         // we've found a match and the estimatedLocation has been updated
-        dezibot.communication.sendMessage("off");
+        sendMessageWithAck("off", "ack_off");
         return;
       }
       findBotInTheArena();
@@ -309,7 +347,7 @@ void updateCoordAndGlobalAngle(){
     }
     // for matchinLocationCount == 1 all is well; the estimatedPosition is correct and we can return
   } else {
-    dezibot.communication.sendMessage("off");
+    sendMessageWithAck("off", "ack_off");
     findBotInTheArena();
   }
 
@@ -470,7 +508,7 @@ void locateBotBasedOnLed(int led) {
 
   // communicate to board -> turn on led
   // once it is safe that the led is turned on, check intensity
-  dezibot.communication.sendMessage("on " + String(led + LED_OFFSET));
+  sendMessageWithAck("on " + String(led + LED_OFFSET), "ack_on " + String(led + LED_OFFSET));
   delay(1000);
 
   int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
