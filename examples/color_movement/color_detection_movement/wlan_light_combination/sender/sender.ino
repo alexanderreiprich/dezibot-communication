@@ -20,6 +20,7 @@ const int cornerBottomLeft = 138;
 Dezibot dezibot = Dezibot();
 bool receivingFinalValue = false;
 bool timeSync = false;
+bool positionCheckInProgress = false;
 int timeDiff = 0;
 
 void setup() {
@@ -27,20 +28,17 @@ void setup() {
   dezibot.communication.begin();
   FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
   dezibot.communication.setGroupNumber(5);
+  turnOffEverything();
   // dezibot.communication.sendMessage("timesync");
   // dezibot.communication.onReceive(&receivedCallback);
   // test(95, 98);
   // mapLedsToCoords();
   // calibrateDezibot();
   // lightInit();
-  // dezibot.communication.onReceive(&receivedPositionCallback);
+  dezibot.communication.onReceive(&receivedPositionCallback);
 }
 
 void loop() {
-  leds[62] = CRGB::White;
-  delay(1000);
-  leds[62] = CRGB::White;
-  delay(1000);
 }
 
 void test(int firstLed, int secondLed) {
@@ -86,45 +84,76 @@ void receivedCallback(String &msg) {
 
 void receivedPositionCallback(String &msg) {
   Serial.println(msg);
-  if (msg == "off") {
-    turnOffEverything();
-    return;
+  if (msg == "start") {
+    if (!positionCheckInProgress) {
+      dezibot.communication.sendMessage("go");
+      positionCheckInProgress = true;
+    }
   }
-  else if (msg == "sides") {
-    turnOnSides(0);
-    delay(1000);
-    turnOffEverything();
-    turnOnSides(1);
-    delay(1000);
-    turnOffEverything();
-    turnOnSides(2);
-    delay(1000);
-    turnOffEverything();
-    turnOnSides(3);
-    delay(1000);
-    turnOffEverything();
-    return;
+  else if (msg == "end") {
+    positionCheckInProgress = false;
   }
-  else if (msg.indexOf("on ") >= 0) {
-    int onPos = msg.indexOf("on ");
-    String numberStr = msg.substring(onPos + 3);
-    leds[numberStr.toInt()] = CRGB::White;
-    Serial.println("turned on " + numberStr.toInt());
-    FastLED.show();
+  if (positionCheckInProgress) {
+    if (msg == "off") {
+        turnOffEverything();
+        return;
+      }
+      else if (msg == "sides") {
+        turnOnSides(0);
+        delay(1000);
+        turnOffEverything();
+        delay(1000);
+        turnOnSides(1);
+        delay(1000);
+        turnOffEverything();
+        delay(1000);
+        turnOnSides(2);
+        delay(1000);
+        turnOffEverything();
+        delay(1000);
+        turnOnSides(3);
+        delay(1000);
+        turnOffEverything();
+        delay(1000);
+        return;
+      }
+      else if (msg.indexOf("on ") >= 0) {
+        int onPos = msg.indexOf("on ");
+        String numberStr = msg.substring(onPos + 3);
+        leds[numberStr.toInt()] = CRGB::White;
+        Serial.println("turned on " + numberStr.toInt());
+        FastLED.show();
+      }
+      else if (msg.indexOf("off ") >= 0) {
+        int offPos = msg.indexOf("off ");
+        String numberStr = msg.substring(offPos + 4);
+        leds[numberStr.toInt()] = CRGB::Black;
+        Serial.println("turned off " + numberStr.toInt());
+        FastLED.show();
+      }
+      else if (msg.indexOf("side ") >= 0) {
+        int sidesPos = msg.indexOf("side ");
+        String numberStr = msg.substring(sidesPos + 5);
+        turnOnSides(numberStr.toInt());
+        FastLED.show();
+      }
+      else if (msg.indexOf("leds ") >= 0) {
+        int arrayPos = msg.indexOf("leds ");
+        String arrayStr = msg.substring(arrayPos + 5);
+        int newLeds[5];
+        if (stringToArray(arrayStr, newLeds, 5)) {
+          for (int i = 0; i < 5; i++) {
+            Serial.println("turning on " + String(newLeds[i]));
+            leds[newLeds[i]] = CRGB::White;
+            FastLED.show();
+            delay(1000);
+            leds[newLeds[i]] = CRGB::Black;
+            FastLED.show();
+          }
+        }
+      }
   }
-  else if (msg.indexOf("off ") >= 0) {
-    int offPos = msg.indexOf("off ");
-    String numberStr = msg.substring(offPos + 4);
-    leds[numberStr.toInt()] = CRGB::Black;
-    Serial.println("turned off " + numberStr.toInt());
-    FastLED.show();
-  }
-  else if (msg.indexOf("side ") >= 0) {
-    int sidesPos = msg.indexOf("side ");
-    String numberStr = msg.substring(sidesPos + 5);
-    turnOnSides(numberStr.toInt());
-    FastLED.show();
-  }
+  
 }
 
 int calcDiff(int dezibotTime) {
@@ -165,29 +194,29 @@ void turnOnSides(int side) {
     case 0:
       for (int i = cornerTopRight + 2; i < cornerBottomRight - 2; i = i + 4) {
         leds[i] = CRGB::White;
-        Serial.println("turned on " + String(i));
       }
+      Serial.println("turned on " + String(side));
       FastLED.show();
       break;
     case 1:
       for (int i = cornerBottomRight + 2; i < cornerBottomLeft - 2; i = i + 4) {
         leds[i] = CRGB::White;
-        Serial.println("turned on " + String(i));
       }
+      Serial.println("turned on " + String(side));
       FastLED.show();
       break;
     case 2:
       for (int i = cornerBottomLeft + 2; i < END_LED - 1; i = i + 4) {
         leds[i] = CRGB::White;
-        Serial.println("turned on " + String(i));
       }
+      Serial.println("turned on " + String(side));
       FastLED.show();
       break;
     case 3:
       for (int i = cornerTopLeft + 2; i < cornerTopRight - 2; i = i + 4) {
         leds[i] = CRGB::White;
-        Serial.println("turned on " + String(i));
       }
+      Serial.println("turned on " + String(side));
       FastLED.show();
       break;
     default: return;
@@ -197,9 +226,32 @@ void turnOnSides(int side) {
 void turnOffEverything() {
   for (int i = START_LED; i < START_LED + LIGHT_LENGTH; i++) {
     leds[i] = CRGB::Black;
-    Serial.println("turned off everything");
   }
+  Serial.println("turned off everything");
   FastLED.show();
+}
+
+bool stringToArray(String str, int arr[], int maxSize) {
+  str = str.substring(1, str.length() - 1);
+
+  int index = 0;
+  int startPos = 0;
+  
+  while (index < maxSize) {
+    int commaPos = str.indexOf(',', startPos);
+    String numberStr = (commaPos == -1) ? 
+                       str.substring(startPos) : 
+                       str.substring(startPos, commaPos);
+    
+    numberStr.trim();
+    arr[index] = numberStr.toInt();
+    
+    if (commaPos == -1) break;
+    startPos = commaPos + 1;
+    index++;
+  }
+  Serial.println(String(arr[2]));
+  return true;
 }
 
 void calibrateDezibot() {
