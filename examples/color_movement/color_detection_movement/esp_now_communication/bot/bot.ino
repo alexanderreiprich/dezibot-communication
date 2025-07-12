@@ -1,0 +1,651 @@
+
+#include <esp_now.h>
+#include <WiFi.h>
+#include <Dezibot.h>
+#include <cmath> 
+
+// Configuration constants
+#define READ_DELAY 100
+#define TIME_SPAN 5000
+#define MAX_X 50
+#define MAX_Y 32
+#define LED_OFFSET 61  // Offset for board communication
+#define MAX_MATCHES 50
+#define NORM_LIGHT 3.02  // Normalization factor for light intensity calculation
+#define X_LED_COUNT 29
+#define Y_LED_COUNT 20
+#define NUMBER_OF_LEDS 98
+#define ACCEPTED_LIGHT_DIFF 20
+
+// Data structures
+struct Coord {
+  int x;
+  int y;
+};
+
+struct Location {
+  Coord coord;
+  int angle;  // Global angle: 0=right, 90=bottom, 180=left, 270=top
+};
+
+typedef struct {
+  uint32_t messageId;
+  uint8_t command;
+  uint8_t ledIds[];
+  uint32_t timestamp;
+} RobotMessage;
+
+// Global variables
+Dezibot dezibot = Dezibot();
+
+// Current estimated location of the bot
+Location estimatedLocation = Location{Coord{25, 16}, 0};
+Location possibleMatchingLocations[MAX_MATCHES];
+int matchingLocationCount = 0;
+
+// LED positions array
+Coord led_pos[NUMBER_OF_LEDS-1];
+
+// Board communication address
+uint8_t boardAddress[] = {0x24, 0x6F, 0x28, 0xAA, 0xBB, 0xCC};
+
+// Message handling variables
+uint32_t messageCounter = 0;
+bool lastMessageAcknowledged = true;
+unsigned long lastSendTime = 0;
+const unsigned long RESEND_TIMEOUT = 1000;
+
+/**
+ * Callback function called when data is sent via ESP-NOW
+ * @param mac_addr MAC address of the recipient
+ * @param status Status of the send operation
+ */
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("Message status: ");
+  if (status == ESP_NOW_SEND_SUCCESS) {
+    Serial.println("Message sent successfully");
+    lastMessageAcknowledged = true;
+  } else {
+    Serial.println("Error during sending");
+    lastMessageAcknowledged = false;
+  }
+}
+
+/**
+ * Callback function called when data is received via ESP-NOW
+ * @param mac MAC address of the sender
+ * @param incomingData Received data
+ * @param len Length of received data
+ */
+void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+  if (len == sizeof(uint32_t)) {
+    uint32_t ackId = *(uint32_t*)incomingData;
+    Serial.printf("Confirmation received for message id: %u\n", ackId);
+    lastMessageAcknowledged = true;
+  }
+}
+
+/**
+ * Initialize the bot and ESP-NOW communication
+ */
+void setup() {
+  Serial.begin(115200);
+  
+  // Initialize WiFi in station mode
+  WiFi.mode(WIFI_STA);
+  Serial.print("MAC address: ");
+  Serial.println(WiFi.macAddress());
+  
+  // Initialize ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("ESP-NOW init failed");
+    return;
+  }
+  
+  // Register callback functions
+  esp_now_register_send_cb(OnDataSent);
+  esp_now_register_recv_cb(OnDataRecv);
+  
+  // Add board as peer
+  esp_now_peer_info_t peerInfo;
+  memcpy(peerInfo.peer_addr, boardAddress, 6);
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+  
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Adding board as peer failed");
+    return;
+  }
+  
+  Serial.println("Dezibot is ready");
+}
+
+void loop() {
+  // Main loop - currently empty
+}
+
+/**
+ * Send a command to the board via ESP-NOW
+ * @param cmd Command to send
+ * @param ledIds Array of LED IDs to control
+ */
+void sendCommand(uint8_t cmd, uint8_t ledIds[]) {
+  RobotMessage message;
+  message.messageId = ++messageCounter;
+  message.command = cmd;
+  message.ledIds = ledIds;
+  message.timestamp = millis();
+  
+  lastMessageAcknowledged = false;
+  lastSendTime = millis();
+  
+  esp_err_t result = esp_now_send(boardAddress, (uint8_t*)&message, sizeof(message));
+  
+  if (result == ESP_OK) {
+    Serial.printf("Command %d sent (ID: %u)\n", cmd, message.messageId);
+  } else {
+    Serial.println("Error during sending");
+  }
+}
+
+/**
+ * Initialize LED positions around the arena perimeter
+ * Maps LED indices to their physical coordinates
+ */
+void setupLedPos() {
+  sendCommand(8, []);  // Turn off all LEDs
+
+  int x_value = 0;
+  int y_value = MAX_Y;
+  float x_diff = X_LED_COUNT / MAX_X;
+  float y_diff = Y_LED_COUNT / MAX_Y;
+  
+  // Map LEDs to coordinates around the perimeter
+  // Top side (LEDs 0-27)
+  for (int i = 1; i <= X_LED_COUNT; i++) {
+    x_value += float(X_LED_COUNT / MAX_X);
+    led_pos[i] = Coord{x_value, MAX_Y};
+  }
+  
+  // Right side (LEDs 28-47)
+  for (int i = X_LED_COUNT + 1; i <= X_LED_COUNT + Y_LED_COUNT; i++) {
+    y_value -= float(Y_LED_COUNT / MAX_Y);
+    led_pos[i] = Coord{MAX_X, y_value};
+  }
+  
+  // Bottom side (LEDs 48-75)
+  for (int i = X_LED_COUNT + Y_LED_COUNT + 1; i <= X_LED_COUNT * 2 + Y_LED_COUNT; i++) {
+    x_value -= float(X_LED_COUNT / MAX_X);
+    led_pos[i] = Coord{x_value, 0};
+  }
+  
+  // Left side (LEDs 76-97)
+  for (int i = X_LED_COUNT * 2 + Y_LED_COUNT + 1; i < NUMBER_OF_LEDS; i++) {
+    y_value += float(Y_LED_COUNT / MAX_Y);
+    led_pos[i] = Coord{0, y_value};
+  }
+}
+
+/**
+ * Get the LED index that is 2 positions away from the current LED
+ * @param led Current LED index
+ * @param right Direction: true for clockwise, false for counter-clockwise
+ * @return LED index 2 positions away
+ */
+int getPossibleOtherLEDBasedOnCurrentLED(int led, bool right) {
+  if (right) {
+    return (led + 2) % NUMBER_OF_LEDS;
+  } else {
+    return (led - 2 + NUMBER_OF_LEDS) % NUMBER_OF_LEDS;
+  }
+}
+
+/**
+ * Determine which side of the arena a LED is located on
+ * @param led LED index
+ * @return Side: 0=top, 1=right, 2=bottom, 3=left
+ */
+int getLEDSide(int led) {
+  if (0 <= led && led <= 27) {
+    return 0;  // Top side
+  } else if (28 <= led && led <= 47) {
+    return 1;  // Right side
+  } else if (48 <= led && led <= 75) {
+    return 2;  // Bottom side
+  } else {
+    return 3;  // Left side
+  }
+}
+
+/**
+ * Calculate the angle between two coordinates relative to the bot's orientation
+ * @param from Starting coordinate
+ * @param to Target coordinate
+ * @param globalAngle Bot's current global angle
+ * @return Relative angle in degrees (0-359)
+ */
+int angleBetween(Coord from, Coord to, int globalAngle) {
+  float dx = to.x - from.x;
+  float dy = to.y - from.y;
+  float rad = atan2(dy, dx);
+  int deg = (int)degrees(rad);
+  int relativeAngle = ((deg + 360) % 360 - globalAngle + 360) % 360;
+  return relativeAngle;
+}
+
+/**
+ * Calculate expected light intensity based on distance and angle
+ * @param angle Relative angle to the LED
+ * @param d Distance to the LED
+ * @param surLight Surrounding light level
+ * @return Expected light intensity
+ */
+int getLightIntensityForDistanceAndAngle(int angle, int d, int surLight) {
+  float rad = radians(angle);
+  int expectedIntensity = surLight + NORM_LIGHT * cos(rad) / (d * d) + correction(d, rad);
+  return expectedIntensity;
+}
+
+/**
+ * Correction factor for light intensity calculation
+ * @param d Distance
+ * @param rad Angle in radians
+ * @return Correction value
+ */
+int correction(int d, float rad) {
+  return int(-52.236 * d + -119.130 * cos(rad) + 1003.007);
+}
+
+/**
+ * Calculate Euclidean distance between two coordinates
+ * @param led LED coordinate
+ * @param bot Bot coordinate
+ * @return Distance
+ */
+float distance(Coord led, Coord bot) {
+  return hypot(led.x - bot.x, led.y - bot.y);
+}
+
+/**
+ * Estimate which LED should be visible based on current location and angle
+ * @param location Current estimated location
+ * @return LED index that should be visible
+ */
+int getPossibleLEDBasedOnCoordAndAngle(Location location) {
+  int angle = estimatedLocation.angle;
+
+  // Normalize angle to 0-360 degrees
+  while (angle < 0) angle += 360;
+  while (angle >= 360) angle -= 360;
+
+  int x = estimatedLocation.coord.x;
+  int y = estimatedLocation.coord.y;
+
+  // Determine which side the bot is facing and calculate corresponding LED
+  // Top: LED 0-27 (x = 0 → MAX_X)
+  if (angle >= 315 || angle < 45) {
+    int index = (x / MAX_X) * X_LED_COUNT;
+    return constrain(index, 0, X_LED_COUNT - 1);
+  }
+  // Right: LED 28-47 (y = 0 → MAX_Y)
+  else if (angle >= 45 && angle < 135) {
+    int index = (y / MAX_Y) * Y_LED_COUNT;
+    return constrain(X_LED_COUNT + index, X_LED_COUNT, X_LED_COUNT + Y_LED_COUNT - 1);
+  }
+  // Bottom: LED 48-75 (x = MAX_X → 0)
+  else if (angle >= 135 && angle < 225) {
+    int index = ((MAX_X - x) / MAX_X) * X_LED_COUNT;
+    return constrain(X_LED_COUNT + Y_LED_COUNT + index, X_LED_COUNT + Y_LED_COUNT, X_LED_COUNT * 2 + Y_LED_COUNT - 1);
+  }
+  // Left: LED 76-97 (y = MAX_Y → 0)
+  else {
+    int index = ((MAX_Y - y) / MAX_Y) * Y_LED_COUNT;
+    return constrain(X_LED_COUNT * 2 + Y_LED_COUNT + index, X_LED_COUNT * 2 + Y_LED_COUNT, NUMBER_OF_LEDS - 1);
+  }
+}
+
+/**
+ * Find possible locations that match the observed light intensity
+ * @param led LED index that was measured
+ * @param intensity Measured light intensity
+ * @param surLight Surrounding light level
+ * @param location Current estimated location
+ */
+void locatePossibleLocations(int led, int intensity, int surLight, Location location) {
+  dezibot.display.println("locateLocations");
+  matchingLocationCount = 0;
+
+  int d = distance(led_pos[led], location.coord);
+  int angle = angleBetween(led_pos[led], location.coord, location.angle);
+  int expectedIntensity = getLightIntensityForDistanceAndAngle(angle, d, surLight);
+  int lightDiff = intensity - expectedIntensity;
+
+  dezibot.display.println(expectedIntensity);
+  
+  // Check if current estimated location is accurate enough
+  if (fabs(lightDiff) < ACCEPTED_LIGHT_DIFF) {
+    dezibot.display.println("estimate works");
+    return;
+  }
+  
+  dezibot.display.println("find close loc");
+  
+  // Search surrounding area for better matches
+  // Check 5cm grid around current location
+  for (int dx = -5; dx <= 5; dx++) {
+    if ((location.coord.x + dx) < 1 || (location.coord.x + dx) >= MAX_X) {
+      continue;  // Position outside arena bounds
+    }
+    for (int dy = -5; dy <= 5; dy++) {
+      if ((location.coord.y + dy) < 1 || (location.coord.y + dy) >= MAX_Y) {
+        continue;  // Position outside arena bounds
+      }
+      for (int dangle = -15; dangle <= 15; dangle += 5) {
+        int corrAngle = (location.angle + dangle + 360) % 360;
+        Location candidate = {{location.coord.x + dx, location.coord.y + dy}, corrAngle};
+        d = distance(led_pos[led], candidate.coord);
+        angle = angleBetween(led_pos[led], candidate.coord, corrAngle);
+        int predIntensity = getLightIntensityForDistanceAndAngle(angle, d, surLight);
+        int diff = abs(predIntensity - intensity);
+
+        if (diff <= ACCEPTED_LIGHT_DIFF && matchingLocationCount < MAX_MATCHES) {
+          possibleMatchingLocations[matchingLocationCount++] = candidate;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Update bot's coordinates and global angle using LED measurements
+ */
+void updateCoordAndGlobalAngle() {
+  // Get LED that should be visible based on current estimate
+  int possibleLED = getPossibleLEDBasedOnCoordAndAngle(estimatedLocation);
+  
+  // Measure surrounding light level
+  int surLight = 0;
+  for (int i = 0; i < 4; i++) {
+    surLight += dezibot.lightDetection.getValue(DL_FRONT);
+  }
+  surLight = surLight / 4;
+  dezibot.display.println(surLight);
+
+  // Turn on the estimated LED
+  sendCommand(4, [possibleLED + LED_OFFSET]);
+  delay(3000);
+
+  int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
+  dezibot.display.println(ledLight);
+  sendCommand(8, []);  // Turn off all LEDs
+  delay(1000);
+  
+  // Check if LED is visible
+  if (ledLight + ACCEPTED_LIGHT_DIFF > surLight) {
+    // LED is visible, refine location estimate
+    locatePossibleLocations(possibleLED, ledLight, surLight, estimatedLocation);
+    
+    if (matchingLocationCount == 0) {
+      // No matches found, need to search entire arena
+      findBotInTheArena();
+    } else if (matchingLocationCount > 1) {
+      // Multiple possible locations, try additional LEDs
+      surLight = dezibot.lightDetection.getValue(DL_FRONT);
+      bool right = true;
+      int nextLed = getPossibleOtherLEDBasedOnCurrentLED(possibleLED, right);
+
+      // Try next LED in clockwise direction
+      sendCommand(4, [nextLed + LED_OFFSET]);
+      delay(1000);
+      ledLight = dezibot.lightDetection.getValue(DL_FRONT);
+      
+      if (ledLight + ACCEPTED_LIGHT_DIFF <= surLight) {
+        // Try counter-clockwise direction
+        right = false;
+        nextLed = getPossibleOtherLEDBasedOnCurrentLED(possibleLED, right);
+        sendCommand(4, [nextLed + LED_OFFSET]);
+        delay(1000);
+        ledLight = dezibot.lightDetection.getValue(DL_FRONT);
+        
+        if (ledLight + ACCEPTED_LIGHT_DIFF <= surLight) {
+          // Neither direction worked, search entire arena
+          sendCommand(8, []);
+          findBotInTheArena();
+          return;
+        }
+      }
+      
+      // Refine location with second LED data
+      locatePossibleLocations(nextLed, ledLight, surLight, estimatedLocation);
+      if (findLocationInPossibleLocations()) {
+        sendCommand(8, []);
+        return;
+      } else {
+        // Try third LED
+        surLight = dezibot.lightDetection.getValue(DL_FRONT);
+        nextLed = getPossibleOtherLEDBasedOnCurrentLED(nextLed, right);
+        sendCommand(4, [nextLed + LED_OFFSET]);
+        delay(1000);
+        ledLight = dezibot.lightDetection.getValue(DL_FRONT);
+        
+        if (ledLight + ACCEPTED_LIGHT_DIFF <= surLight) {
+          sendCommand(8, []);
+          findBotInTheArena();
+          return;
+        }
+        
+        locatePossibleLocations(nextLed, ledLight, surLight, estimatedLocation);
+        if (findLocationInPossibleLocations()) {
+          sendCommand(8, []);
+          return;
+        }
+        findBotInTheArena();
+      }
+    }
+    // If matchingLocationCount == 1, location is accurate
+  } else {
+    // LED not visible, search entire arena
+    sendCommand(8, []);
+    findBotInTheArena();
+  }
+}
+
+/**
+ * Find the best matching location from possible locations
+ * @return true if a unique match was found, false otherwise
+ */
+bool findLocationInPossibleLocations() {
+  if (matchingLocationCount == 0) {
+    return false;
+  }
+  
+  dezibot.display.clear();
+  Location duplicates[25];
+  int dupCount = 0;
+  
+  // Find duplicate locations (locations that appear multiple times)
+  for (int i = 0; i < matchingLocationCount; i++) {
+    for (int j = i + 1; j < matchingLocationCount; j++) {
+      if (possibleMatchingLocations[i].coord.x == possibleMatchingLocations[j].coord.x &&
+          possibleMatchingLocations[i].coord.y == possibleMatchingLocations[j].coord.y &&
+          possibleMatchingLocations[i].angle == possibleMatchingLocations[j].angle) {
+        
+        // Check if already added to duplicates
+        bool alreadyAdded = false;
+        for (int k = 0; k < dupCount; k++) {
+          if (duplicates[k].coord.x == possibleMatchingLocations[i].coord.x &&
+              duplicates[k].coord.y == possibleMatchingLocations[i].coord.y &&
+              duplicates[k].angle == possibleMatchingLocations[i].angle) {
+            alreadyAdded = true;
+            break;
+          }
+        }
+
+        if (!alreadyAdded && dupCount < 25) {
+          duplicates[dupCount++] = possibleMatchingLocations[i];
+          dezibot.display.println("dupe ");
+          dezibot.display.print(possibleMatchingLocations[i].coord.x);
+          dezibot.display.print(",");
+          dezibot.display.print(possibleMatchingLocations[i].coord.y);
+        }
+      }
+    }
+  }
+  
+  // If exactly one duplicate found, use it as the new location
+  if (dupCount == 1) {
+    estimatedLocation = duplicates[0];
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Find the index of the maximum value in an array
+ * @param arr Array to search
+ * @param size Size of the array
+ * @return Index of maximum value
+ */
+int getMaxIndex(int arr[], int size) {
+  int maxIndex = 0;
+  for (int i = 1; i < size; i++) {
+    if (arr[i] > arr[maxIndex]) {
+      maxIndex = i;
+    }
+  }
+  return maxIndex;
+}
+
+/**
+ * Search the entire arena to find the bot's location
+ * Uses all LEDs on each side to determine general direction
+ */
+void findBotInTheArena() {
+  matchingLocationCount = 0;
+  
+  // Turn on all LEDs on each side
+  sendCommand(5, []);
+  
+  // Measure light intensity from each side
+  int fullOnLights[4];
+  for (int i = 0; i < 4; i++) {
+    int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
+    fullOnLights[i] = ledLight;
+    delay(1000);
+  }
+
+  // Find the side with highest light intensity
+  int maxIndex = getMaxIndex(fullOnLights, 4);
+  
+  // Determine LED range for the brightest side
+  int startLed, endLed;
+  if (maxIndex == 0) {  // Right side
+    startLed = 0;
+    endLed = X_LED_COUNT - 1;
+  } else if (maxIndex == 1) {  // Bottom side
+    startLed = X_LED_COUNT;
+    endLed = X_LED_COUNT + Y_LED_COUNT - 1;
+  } else if (maxIndex == 2) {  // Left side
+    startLed = X_LED_COUNT + Y_LED_COUNT;
+    endLed = X_LED_COUNT * 2 + Y_LED_COUNT - 1;
+  } else {  // Top side
+    startLed = X_LED_COUNT * 2 + Y_LED_COUNT;
+    endLed = NUMBER_OF_LEDS - 1;
+  }
+
+  // Select 5 LEDs along the brightest side (avoiding edges)
+  int leds[5];
+  leds[0] = startLed + 2;
+  leds[1] = startLed + round((endLed - startLed) / 4);
+  leds[2] = startLed + round((endLed - startLed) / 2);
+  leds[3] = startLed + round(3 * (endLed - startLed) / 4);
+  leds[4] = endLed - 2;
+
+  // Turn on selected LEDs
+  sendCommand(7, leds);
+  delay(100);
+
+  // Measure light intensity from each selected LED
+  int ledLights[5];
+  for (int k = 0; k < 5; k++) {
+    int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
+    ledLights[k] = ledLight;
+    delay(1000);
+  }
+
+  // Find the brightest LED and use it for localization
+  int possibleLed = leds[getMaxIndex(ledLights, 5)];
+  locateBotBasedOnLed(possibleLed);
+}
+
+/**
+ * Try to locate bot at a specific distance from a LED
+ * @param led LED index
+ * @param ledLight Measured light intensity
+ * @param surLight Surrounding light level
+ * @param possibleLocation Location to test
+ * @param distance Distance from LED to test
+ * @return true if location was found, false otherwise
+ */
+bool locateDistantLocation(int led, int ledLight, int surLight, Location possibleLocation, int distance) {
+  int dir = getLEDSide(led);
+  
+  // Adjust location based on LED side and distance
+  if (dir == 0) {  // Top side
+    possibleLocation.coord.y = possibleLocation.coord.y - distance;
+    possibleLocation.angle = 270;
+  } else if (dir == 1) {  // Right side
+    possibleLocation.coord.x = possibleLocation.coord.x - distance;
+    possibleLocation.angle = 0;
+  } else if (dir == 2) {  // Bottom side
+    possibleLocation.coord.y = possibleLocation.coord.y + distance;
+    possibleLocation.angle = 90;
+  } else {  // Left side
+    possibleLocation.coord.x = possibleLocation.coord.x - distance;
+    possibleLocation.angle = 180;
+  }
+
+  return findLocationInPossibleLocations();
+}
+
+/**
+ * Locate bot based on a specific LED measurement
+ * @param led LED index to use for localization
+ */
+void locateBotBasedOnLed(int led) {
+  delay(1000);
+
+  Coord ledLoc = led_pos[led];
+  
+  // Measure surrounding light level
+  int surLight = 0;
+  for (int i = 0; i < 4; i++) {
+    surLight += dezibot.lightDetection.getValue(DL_FRONT);
+  }
+  surLight = surLight / 4;
+
+  // Turn on the LED
+  sendCommand(4, [led + LED_OFFSET]);
+  delay(1000);
+
+  int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
+  Location possibleLocation = Location{Coord{ledLoc.x, ledLoc.y}, 0};
+
+  // Try different distances from the LED
+  if (locateDistantLocation(led, ledLight, surLight, possibleLocation, 1)) {
+    return;
+  }
+  if (locateDistantLocation(led, ledLight, surLight, possibleLocation, 11)) {
+    return;
+  }
+  
+  // For vertical sides, try larger distances
+  int dir = getLEDSide(led);
+  if (dir == 1 || dir == 3) {
+    for (int d = 21; d <= MAX_Y - 1; d = d + 10) {
+      if (locateDistantLocation(led, ledLight, surLight, possibleLocation, d)) {
+        return;
+      }
+    }
+  }
+}
