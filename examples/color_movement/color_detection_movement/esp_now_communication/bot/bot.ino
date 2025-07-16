@@ -17,6 +17,8 @@
 #define NUMBER_OF_LEDS 98
 #define ACCEPTED_LIGHT_DIFF 20
 #define MAX_LED_LIGHTS 10
+#define MOVE_CORR_TIME 200
+#define NORM_MOVE_DISTANCE 2
 
 // Data structures
 struct Coord {
@@ -124,12 +126,10 @@ void setup() {
 
 void loop() {
   dezibot.display.clear();
-  dezibot.motion.left.setSpeed(5000);
-  dezibot.motion.right.setSpeed(5000);
+  moveForward();
   delay(1000);
-  dezibot.motion.stop();
   updateCoordAndGlobalAngle();
-  delay(5000);
+  delay(10000);
 }
 
 /**
@@ -154,6 +154,89 @@ void sendCommand(uint8_t cmd, const uint8_t ledIds[], uint8_t numLeds) {
   esp_err_t result = esp_now_send(boardAddress, (uint8_t*)&message, sizeof(message));
 
 }
+
+void updateLocationBasedOnEstimatedMove(int distance) {
+  Location newLocation = estimatedLocation;
+  float angle_rad = estimatedLocation.angle * (M_PI / 180.0);  // degree to radiant
+
+  newLocation.coord.x = estimatedLocation.coord.x + distance * cos(angle_rad);
+  newLocation.coord.y = estimatedLocation.coord.y + distance * sin(angle_rad);
+  estimatedLocation = newLocation;
+}
+
+void moveForward () {
+  //dezibot.motion.move() does not result in an acceptable move function
+  // we turn 1 led on (one which results in a high measured light intensity)
+  
+  int possibleLED = getPossibleLEDBasedOnCoordAndAngle(estimatedLocation);
+  Location oldLocation = estimatedLocation;
+  uint8_t ledArr[1] = { (uint8_t)(possibleLED + LED_OFFSET) };
+  sendCommand(4, ledArr, 1);
+  delay(2000);
+  int startLight = dezibot.lightDetection.getValue(DL_FRONT);
+  moveAction(1000);
+  int endLight = dezibot.lightDetection.getValue(DL_FRONT);
+  // updates estimatedLocation so we can calculate an estimated light intensity based on that location
+  updateLocationBasedOnEstimatedMove(NORM_MOVE_DISTANCE);
+  uint8_t empty[1] = {0};
+  sendCommand(8, empty, 0);
+  int surLight = dezibot.lightDetection.getValue(DL_FRONT);
+  int d = distance(led_pos[possibleLED], estimatedLocation.coord);
+  int estimatedLight = getLightIntensityForDistanceAndAngle(angleBetween(led_pos[possibleLED], estimatedLocation.coord, estimatedLocation.angle), d, surLight);
+  if(fabs(endLight - estimatedLight) < ACCEPTED_LIGHT_DIFF ) {
+    // we moved straight forward yay
+  }
+  else {
+    dezibot.display.println("drift off");
+    //we've run off course and need to find out in which direction
+    // this also means, that we cannot assume the updated location is correct
+    estimatedLocation  = oldLocation;
+    // check direction by turning on the right led and then the left led and checking which one is more intense
+    sendCommand(8, empty, 0);
+    delay(100);
+    uint8_t ledId[1] = {((possibleLED + LED_OFFSET + 2) % NUMBER_OF_LEDS)};
+    sendCommand(4, ledId, 1);
+    delay(100);
+    int rightLight = dezibot.lightDetection.getValue(DL_FRONT);
+    if(rightLight > endLight) {
+      // we know the bot drifted off to the right side and correct accordingly
+      // correctCourseLeft();
+      
+    } else {
+      dezibot.display.println("to left, correct to right");
+      // the bot drifted off to the left side and we correct accordingly
+      // correctCourseRight();
+    }
+    // check todo
+    //todo calculate new position
+
+  } 
+}
+
+void correctCourseLeft() {
+  //turn bot to the left
+  dezibot.motion.left.setSpeed(5000);
+  delay(MOVE_CORR_TIME);
+  dezibot.motion.stop();
+  
+}
+
+void correctCourseRight() {
+  // turn bot to the right
+  dezibot.motion.right.setSpeed(5000);
+  delay(MOVE_CORR_TIME);
+  dezibot.motion.stop();
+ 
+}
+
+
+void moveAction (int millis) {
+  dezibot.motion.left.setSpeed(8192);
+  dezibot.motion.right.setSpeed(8192);
+  delay(millis);
+  dezibot.motion.stop();
+}
+
 
 /**
  * Initialize LED positions around the arena perimeter
