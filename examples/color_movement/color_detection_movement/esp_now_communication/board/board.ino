@@ -9,6 +9,7 @@
 #define START_LED 60
 #define LIGHT_LENGTH 98
 #define END_LED 158
+#define MAX_LED_LIGHTS 10
 
 // LED array for FastLED control
 CRGB leds[NUM_LEDS];
@@ -20,7 +21,8 @@ Dezibot dezibot = Dezibot();
 typedef struct {
   uint32_t messageId;
   uint8_t command;
-  uint8_t ledIds[];
+  uint8_t ledIds[MAX_LED_LIGHTS];
+  uint8_t numLeds; 
   uint32_t timestamp;
 } RobotMessage;
 
@@ -51,7 +53,9 @@ bool positionCheckInProgress = false;
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
   // Save bot's MAC address for future reference
   memcpy(robotMacAddress, mac, 6);
-  
+  Serial.println(String(len));
+  Serial.println(String(sizeof(RobotMessage)));
+
   if (len == sizeof(RobotMessage)) {
     RobotMessage message = *(RobotMessage*)incomingData;
     

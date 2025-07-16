@@ -16,6 +16,7 @@
 #define Y_LED_COUNT 20
 #define NUMBER_OF_LEDS 98
 #define ACCEPTED_LIGHT_DIFF 20
+#define MAX_LED_LIGHTS 10
 
 // Data structures
 struct Coord {
@@ -31,7 +32,8 @@ struct Location {
 typedef struct {
   uint32_t messageId;
   uint8_t command;
-  uint8_t ledIds[];
+  uint8_t ledIds[MAX_LED_LIGHTS];
+  uint8_t numLeds; 
   uint32_t timestamp;
 } RobotMessage;
 
@@ -47,7 +49,7 @@ int matchingLocationCount = 0;
 Coord led_pos[NUMBER_OF_LEDS-1];
 
 // Board communication address
-uint8_t boardAddress[] = {0x24, 0x6F, 0x28, 0xAA, 0xBB, 0xCC};
+uint8_t boardAddress[] = {0xA8, 0x42, 0xE3, 0x91, 0x37, 0x88};
 
 // Message handling variables
 uint32_t messageCounter = 0;
@@ -61,12 +63,9 @@ const unsigned long RESEND_TIMEOUT = 1000;
  * @param status Status of the send operation
  */
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  Serial.print("Message status: ");
   if (status == ESP_NOW_SEND_SUCCESS) {
-    Serial.println("Message sent successfully");
     lastMessageAcknowledged = true;
   } else {
-    Serial.println("Error during sending");
     lastMessageAcknowledged = false;
   }
 }
@@ -80,7 +79,6 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
   if (len == sizeof(uint32_t)) {
     uint32_t ackId = *(uint32_t*)incomingData;
-    Serial.printf("Confirmation received for message id: %u\n", ackId);
     lastMessageAcknowledged = true;
   }
 }
@@ -89,16 +87,16 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
  * Initialize the bot and ESP-NOW communication
  */
 void setup() {
-  Serial.begin(115200);
-  
+  dezibot.begin();
   // Initialize WiFi in station mode
   WiFi.mode(WIFI_STA);
-  Serial.print("MAC address: ");
-  Serial.println(WiFi.macAddress());
+  WiFi.disconnect();
+  delay(100);
+  dezibot.display.println(WiFi.macAddress());
   
   // Initialize ESP-NOW
   if (esp_now_init() != ESP_OK) {
-    Serial.println("ESP-NOW init failed");
+    dezibot.display.println("fail");
     return;
   }
   
@@ -108,20 +106,30 @@ void setup() {
   
   // Add board as peer
   esp_now_peer_info_t peerInfo;
+  memset(&peerInfo, 0, sizeof(peerInfo));
   memcpy(peerInfo.peer_addr, boardAddress, 6);
   peerInfo.channel = 0;
   peerInfo.encrypt = false;
   
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Adding board as peer failed");
+    dezibot.display.println("pairing fail");
     return;
   }
+
+  dezibot.display.println("let's go!");
+
+  setupLedPos();
   
-  Serial.println("Dezibot is ready");
 }
 
 void loop() {
-  // Main loop - currently empty
+  dezibot.display.clear();
+  dezibot.motion.left.setSpeed(5000);
+  dezibot.motion.right.setSpeed(5000);
+  delay(1000);
+  dezibot.motion.stop();
+  updateCoordAndGlobalAngle();
+  delay(5000);
 }
 
 /**
@@ -129,23 +137,22 @@ void loop() {
  * @param cmd Command to send
  * @param ledIds Array of LED IDs to control
  */
-void sendCommand(uint8_t cmd, uint8_t ledIds[]) {
+void sendCommand(uint8_t cmd, const uint8_t ledIds[], uint8_t numLeds) {
   RobotMessage message;
   message.messageId = ++messageCounter;
   message.command = cmd;
-  message.ledIds = ledIds;
+  message.numLeds = numLeds;
+  memset(message.ledIds, 0, MAX_LED_LIGHTS); // Initialisiere mit 0
+  if (numLeds > 0 && ledIds != nullptr) {
+    memcpy(message.ledIds, ledIds, numLeds * sizeof(uint8_t));
+  }
   message.timestamp = millis();
-  
+
   lastMessageAcknowledged = false;
   lastSendTime = millis();
-  
+
   esp_err_t result = esp_now_send(boardAddress, (uint8_t*)&message, sizeof(message));
-  
-  if (result == ESP_OK) {
-    Serial.printf("Command %d sent (ID: %u)\n", cmd, message.messageId);
-  } else {
-    Serial.println("Error during sending");
-  }
+
 }
 
 /**
@@ -153,7 +160,8 @@ void sendCommand(uint8_t cmd, uint8_t ledIds[]) {
  * Maps LED indices to their physical coordinates
  */
 void setupLedPos() {
-  sendCommand(8, []);  // Turn off all LEDs
+  uint8_t empty[1] = {0};
+  sendCommand(8, empty, 0);  // Turn off all LEDs
 
   int x_value = 0;
   int y_value = MAX_Y;
@@ -362,7 +370,7 @@ void locatePossibleLocations(int led, int intensity, int surLight, Location loca
 void updateCoordAndGlobalAngle() {
   // Get LED that should be visible based on current estimate
   int possibleLED = getPossibleLEDBasedOnCoordAndAngle(estimatedLocation);
-  
+  dezibot.display.println(String(possibleLED));
   // Measure surrounding light level
   int surLight = 0;
   for (int i = 0; i < 4; i++) {
@@ -371,13 +379,14 @@ void updateCoordAndGlobalAngle() {
   surLight = surLight / 4;
   dezibot.display.println(surLight);
 
-  // Turn on the estimated LED
-  sendCommand(4, [possibleLED + LED_OFFSET]);
+  uint8_t ledArr[1] = { (uint8_t)(possibleLED + LED_OFFSET) };
+  sendCommand(4, ledArr, 1);
   delay(3000);
 
   int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
   dezibot.display.println(ledLight);
-  sendCommand(8, []);  // Turn off all LEDs
+  uint8_t empty[1] = {0};
+  sendCommand(8, empty, 0);  // Turn off all LEDs
   delay(1000);
   
   // Check if LED is visible
@@ -395,7 +404,8 @@ void updateCoordAndGlobalAngle() {
       int nextLed = getPossibleOtherLEDBasedOnCurrentLED(possibleLED, right);
 
       // Try next LED in clockwise direction
-      sendCommand(4, [nextLed + LED_OFFSET]);
+      uint8_t nextLedArr[1] = { (uint8_t)(nextLed + LED_OFFSET) };
+      sendCommand(4, nextLedArr, 1);
       delay(1000);
       ledLight = dezibot.lightDetection.getValue(DL_FRONT);
       
@@ -403,13 +413,14 @@ void updateCoordAndGlobalAngle() {
         // Try counter-clockwise direction
         right = false;
         nextLed = getPossibleOtherLEDBasedOnCurrentLED(possibleLED, right);
-        sendCommand(4, [nextLed + LED_OFFSET]);
+        uint8_t nextLedArr[1] = { (uint8_t)(nextLed + LED_OFFSET) };
+        sendCommand(4, nextLedArr, 1);
         delay(1000);
         ledLight = dezibot.lightDetection.getValue(DL_FRONT);
         
         if (ledLight + ACCEPTED_LIGHT_DIFF <= surLight) {
           // Neither direction worked, search entire arena
-          sendCommand(8, []);
+          sendCommand(8, empty, 0);
           findBotInTheArena();
           return;
         }
@@ -418,25 +429,26 @@ void updateCoordAndGlobalAngle() {
       // Refine location with second LED data
       locatePossibleLocations(nextLed, ledLight, surLight, estimatedLocation);
       if (findLocationInPossibleLocations()) {
-        sendCommand(8, []);
+        sendCommand(8, empty, 0);
         return;
       } else {
         // Try third LED
         surLight = dezibot.lightDetection.getValue(DL_FRONT);
         nextLed = getPossibleOtherLEDBasedOnCurrentLED(nextLed, right);
-        sendCommand(4, [nextLed + LED_OFFSET]);
+        uint8_t nextLedArr[1] = { (uint8_t)(nextLed + LED_OFFSET) };
+        sendCommand(4, nextLedArr, 1);
         delay(1000);
         ledLight = dezibot.lightDetection.getValue(DL_FRONT);
         
         if (ledLight + ACCEPTED_LIGHT_DIFF <= surLight) {
-          sendCommand(8, []);
+          sendCommand(8, empty, 0);
           findBotInTheArena();
           return;
         }
         
         locatePossibleLocations(nextLed, ledLight, surLight, estimatedLocation);
         if (findLocationInPossibleLocations()) {
-          sendCommand(8, []);
+          sendCommand(8, empty, 0);
           return;
         }
         findBotInTheArena();
@@ -445,7 +457,7 @@ void updateCoordAndGlobalAngle() {
     // If matchingLocationCount == 1, location is accurate
   } else {
     // LED not visible, search entire arena
-    sendCommand(8, []);
+    sendCommand(8, empty, 0);
     findBotInTheArena();
   }
 }
@@ -522,9 +534,8 @@ int getMaxIndex(int arr[], int size) {
  */
 void findBotInTheArena() {
   matchingLocationCount = 0;
-  
-  // Turn on all LEDs on each side
-  sendCommand(5, []);
+  uint8_t empty[1] = {0};
+  sendCommand(5, empty, 0);
   
   // Measure light intensity from each side
   int fullOnLights[4];
@@ -554,15 +565,14 @@ void findBotInTheArena() {
   }
 
   // Select 5 LEDs along the brightest side (avoiding edges)
-  int leds[5];
+  uint8_t leds[5];
   leds[0] = startLed + 2;
   leds[1] = startLed + round((endLed - startLed) / 4);
   leds[2] = startLed + round((endLed - startLed) / 2);
   leds[3] = startLed + round(3 * (endLed - startLed) / 4);
   leds[4] = endLed - 2;
 
-  // Turn on selected LEDs
-  sendCommand(7, leds);
+  sendCommand(7, leds, 5);
   delay(100);
 
   // Measure light intensity from each selected LED
@@ -624,8 +634,8 @@ void locateBotBasedOnLed(int led) {
   }
   surLight = surLight / 4;
 
-  // Turn on the LED
-  sendCommand(4, [led + LED_OFFSET]);
+  uint8_t ledArr[1] = { (uint8_t)(led + LED_OFFSET) };
+  sendCommand(4, ledArr, 1);
   delay(1000);
 
   int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
