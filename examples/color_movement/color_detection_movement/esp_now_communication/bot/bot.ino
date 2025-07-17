@@ -16,8 +16,11 @@
 #define NUMBER_OF_LEDS 98
 #define ACCEPTED_LIGHT_DIFF 20
 #define MAX_LED_LIGHTS 10
+#define MOVE_NORM_TIME 1000
 #define MOVE_CORR_TIME 200
-#define NORM_MOVE_DISTANCE 2
+#define MOVE_CORR_ANGLE 45
+#define NORM_MOVE_DISTANCE 2.5
+#define NORM_MOVE_ANGLE 45
 
 // Data structures
 struct Coord {
@@ -162,18 +165,21 @@ void sendCommand(uint8_t cmd, const uint8_t ledIds[], uint8_t numLeds) {
 
 }
 
-void updateLocationBasedOnEstimatedMove(int distance) {
+void updateLocationBasedOnEstimatedMove(float distance, int angle) {
   dezibot.display.clear();
   dezibot.display.println("updateLocationBasedOnEstimatedMove");
   delay(3000);
   Location newLocation = estimatedLocation;
-  float angle_rad = estimatedLocation.angle * (M_PI / 180.0);  // Degree to radiant
+  float angle_rad = (estimatedLocation.angle + angle) * (M_PI / 180.0);  // Degree to radiant
 
   newLocation.coord.x = estimatedLocation.coord.x + distance * cos(angle_rad);
   newLocation.coord.y = estimatedLocation.coord.y + distance * sin(angle_rad);
   estimatedLocation = newLocation;
 }
 
+/**
+ * Move bot straight forward with correction and led feedback
+ */
 void moveForward () {
   dezibot.display.clear();
   dezibot.display.println("moveForward");
@@ -193,62 +199,87 @@ void moveForward () {
   int endLight = dezibot.lightDetection.getValue(DL_FRONT);
 
   // Updates estimatedLocation so we can calculate an estimated light intensity based on that location
-  updateLocationBasedOnEstimatedMove(NORM_MOVE_DISTANCE);
+  updateLocationBasedOnEstimatedMove(NORM_MOVE_DISTANCE, 0);
   
   sendCommand(8, empty, 0);
 
   int surLight = dezibot.lightDetection.getValue(DL_FRONT);
   int d = distance(led_pos[possibleLED], estimatedLocation.coord);
   int estimatedLight = getLightIntensityForDistanceAndAngle(angleBetween(led_pos[possibleLED], estimatedLocation.coord, estimatedLocation.angle), d, surLight);
-  
+  delay(4000);
+  dezibot.display.clear();
+  dezibot.display.println(estimatedLight);
+  dezibot.display.println(endLight);
+  dezibot.display.println(fabs(estimatedLight - endLight));
   // The bot is not on course, we need to correct
   if(fabs(endLight - estimatedLight) >= ACCEPTED_LIGHT_DIFF ) {
     dezibot.display.println("drift off");
-    estimatedLocation  = oldLocation;
+    // estimatedLocation  = oldLocation;
 
     // Check direction by turning on the right led and then the left led and checking which one is more intense
     sendCommand(8, empty, 0);
     delay(100);
+
+    int rightLed = (((possibleLED + 2) % NUMBER_OF_LEDS)) + LED_OFFSET;
     
-    uint8_t ledId[1] = {(((possibleLED + 2) % NUMBER_OF_LEDS)) + LED_OFFSET};
+    uint8_t ledId[1] = {rightLed};
     sendCommand(4, ledId, 1);
     delay(100);
     
     int rightLight = dezibot.lightDetection.getValue(DL_FRONT);
+    d = distance(led_pos[rightLed], estimatedLocation.coord);
+    estimatedLight = getLightIntensityForDistanceAndAngle(angleBetween(led_pos[rightLed], estimatedLocation.coord, estimatedLocation.angle), d, surLight);
+    bool isRight = rightLight > endLight;
+    dezibot.display.clear(); 
+    dezibot.display.println(estimatedLight);
+    dezibot.display.println(rightLight);
+    dezibot.display.println(fabs(estimatedLight - rightLight));
+    delay(4000);
+    while( fabs(estimatedLight - rightLight) > ACCEPTED_LIGHT_DIFF){
+      delay(4000);
+      if(isRight) {
+        // The bot is drifting to the right -> correction to the left
+      turnLeft();
+        
+      } else {
+        dezibot.display.println("to left, correct to right");
+        // The bot is drifting to the left -> correction to the right
+        turnRight();
+      }
+      rightLight = dezibot.lightDetection.getValue(DL_FRONT);
+      delay(4000);
+      dezibot.display.clear(); 
+      dezibot.display.println(estimatedLight);
+      dezibot.display.println(rightLight);
+      dezibot.display.println(fabs(estimatedLight - rightLight));
+    }
 
     sendCommand(8, empty, 0);
-    if(rightLight > endLight) {
-      // The bot is drifting to the right -> correction to the left
-      // correctCourseLeft();
-      
-    } else {
-      dezibot.display.println("to left, correct to right");
-      // The bot is drifting to the left -> correction to the right
-      // correctCourseRight();
-    }
     // TODO: check if the bot is on course
     // TODO: calculate new position
   }
 }
 
-void correctCourseLeft() {
+void turnRight() {
   dezibot.display.clear();
   dezibot.display.println("correctCourseLeft");
   delay(3000);
   // Turn bot to the left
-  dezibot.motion.left.setSpeed(5000);
+  dezibot.motion.right.setSpeed(5000);
   delay(MOVE_CORR_TIME);
   dezibot.motion.stop();
+  // updateLocationBasedOnEstimatedMove(NORM_MOVE_DISTANCE*MOVE_CORR_TIME/MOVE_NORM_TIME, MOVE_CORR_ANGLE);
 }
 
-void correctCourseRight() {
+void turnLeft() {
   dezibot.display.clear();
   dezibot.display.println("correctCourseRight");
   delay(3000);
   // Turn bot to the right
-  dezibot.motion.right.setSpeed(5000);
+  dezibot.motion.left.setSpeed(5000);
   delay(MOVE_CORR_TIME);
   dezibot.motion.stop();
+  // updateLocationBasedOnEstimatedMove(NORM_MOVE_DISTANCE*MOVE_CORR_TIME/MOVE_NORM_TIME, -MOVE_CORR_ANGLE);
 }
 
 void moveAction (int millis) {
