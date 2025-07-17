@@ -53,8 +53,6 @@ bool positionCheckInProgress = false;
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
   // Save bot's MAC address for future reference
   memcpy(robotMacAddress, mac, 6);
-  Serial.println(String(len));
-  Serial.println(String(sizeof(RobotMessage)));
 
   if (len == sizeof(RobotMessage)) {
     RobotMessage message = *(RobotMessage*)incomingData;
@@ -171,7 +169,7 @@ void processCommand(uint8_t command, uint8_t ledIds[]) {
       break;
     
     case 7: // Turn on multiple LEDs sequentially
-      for (int i = 0; i < 5; i++) {
+      for (int i = 0; i < sizeof(ledIds); i++) {
         Serial.println("Turning on LED " + String(ledIds[i]));
         leds[ledIds[i]] = CRGB::White;
         FastLED.show();
