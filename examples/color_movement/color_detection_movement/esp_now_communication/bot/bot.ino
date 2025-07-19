@@ -69,6 +69,8 @@ bool lastMessageAcknowledged = true;
 unsigned long lastSendTime = 0;
 const unsigned long RESEND_TIMEOUT = 1000;
 
+int iterations = 0;
+
 /**
  * Callback function called when data is sent via ESP-NOW
  * @param mac_addr MAC address of the recipient
@@ -157,89 +159,6 @@ void setup() {
   setupLedPos();
 }
 
-/**
- * Send a command to the board via ESP-NOW
- * @param cmd Command to send
- * @param ledIds Array of LED IDs to control
- */
-void sendCommand(uint8_t cmd, const uint8_t ledIds[], uint8_t numLeds, String msg="") { 
-  RobotMessage message;
-  message.messageId = ++messageCounter;
-  message.command = cmd;
-  message.numLeds = numLeds;
-  memset(message.msg, 0, sizeof(message.msg));
-  strcpy(message.msg, msg.c_str());
-  memset(message.ledIds, 0, MAX_LED_LIGHTS); // Initialize with 0
-  if (numLeds > 0 && ledIds != nullptr) {
-    memcpy(message.ledIds, ledIds, numLeds * sizeof(uint8_t));
-  }
-  message.timestamp = millis();
-
-  lastMessageAcknowledged = false;
-  lastSendTime = millis();
-
-  esp_err_t result = esp_now_send(boardAddress, (uint8_t*)&message, sizeof(message));
-
-}
-
-void loop() {
-  // moveForward();
-  //color movement
-  // uint16_t colorValueRed = dezibot.colorDetection.getColorValue(VEML_RED);
-  // uint16_t colorValueBlue = dezibot.colorDetection.getColorValue(VEML_BLUE);
-  // uint16_t colorValueGreen = dezibot.colorDetection.getColorValue(VEML_GREEN);
-  // uint16_t colorValueWhite = dezibot.colorDetection.getColorValue(VEML_WHITE);
-  // float colorGreenWhiteRatio = float(colorValueGreen) / float(colorValueWhite);
-  // if (colorValueWhite < 1200){
-  //   dezibot.display.print("silent mode");
-  //   dezibot.motion.stop();
-  // }
-  //  else if ((colorValueRed > colorValueGreen) && (colorValueRed > colorValueBlue) && (colorValueRed > colorValueWhite / 2)) {
-  //   dezibot.display.print("red, left turn");
-  //   turnLeft();
-  // }
-  // else if ((colorValueGreen > colorValueRed) && (colorValueGreen > colorValueBlue) && (colorGreenWhiteRatio > float(0.7))) {
-  //   dezibot.display.print("green");
-  //   turnRight();
-  // }
-  // else if ((colorValueBlue > colorValueRed) && (colorValueBlue > colorValueGreen) && (colorValueBlue > colorValueWhite / 2)) {
-  //   dezibot.display.print("blau");
-  //   dezibot.display.print((colorValueWhite / 2 ) - colorValueBlue);
-  //   moveForward();
-  // }
-  // // else if ((colorValueBlue + colorValueRed + colorValueGreen) * float(0.64) < colorValueWhite){
-  //   else if (colorValueWhite > 4000){
-  //   dezibot.display.print("white");
-  //   dezibot.display.print((colorValueBlue + colorValueRed + colorValueGreen) * 2 / 3 ); 
-  //   dezibot.motion.stop();
-  // } else {
-  //   dezibot.display.print("delay");
-  //   dezibot.display.print((colorValueBlue + colorValueRed + colorValueGreen) * 2 / 3 ); 
-  //   delay(READ_DELAY);
-  // }
-  // int led = 126;
-  // Coord pos = Coord{18,18};
-  // int botAngle = 90;
-  // int surLight = dezibot.lightDetection.getValue(DL_FRONT);
-  // uint8_t ledArr[1] = { (uint8_t)(led) };
-  // sendCommand(4, ledArr, 1);
-  // delay(100);
-  // int actualLight = dezibot.lightDetection.getValue(DL_FRONT);
-  // float d = distance(ledPos[led - LED_OFFSET], pos);
-  // int angle = angleBetween(led - LED_OFFSET, ledPos[led- LED_OFFSET], pos, botAngle);
-  // int estimatedLight = getLightIntensityForDistanceAndAngle(angle, d, surLight);
-  // delay(100);
-  // sendCommand(9, empty, 0, "actualLight: " + String(actualLight) +  " surLight: " + String(surLight) + " d: " + String(d) + " angle: " + String(angle) + " estimatedLight: " + String(estimatedLight));
-  // sendCommand(9, empty, 0, String(String(ledPos[led - LED_OFFSET].x) + ", " + String(ledPos[led - LED_OFFSET].y)));
-  // sendCommand(8, empty, 0);
-  //  dezibot.display.println("l: ");
-  // dezibot.display.print(surLight);
-  // dezibot.display.print(" ");
-  // dezibot.display.println(actualLight);
-  // updateCoordAndGlobalAngle();
-  delay(10000);
-}
-
 void updateLocationBasedOnEstimatedMove(float distance, int angle) {
   dezibot.display.clear();
   sendCommand(9, empty, 0, "updateLocationBasedOnEstimatedMove" + String(distance));
@@ -253,7 +172,6 @@ void updateLocationBasedOnEstimatedMove(float distance, int angle) {
 void turnLeft(int time = 1000) {
   dezibot.display.clear();
   dezibot.display.println("turnLeft");
-  delay(3000);
   // Turn bot to the left
   dezibot.motion.right.setSpeed(5000);
   delay(MOVE_CORR_TIME);
@@ -265,7 +183,6 @@ void turnLeft(int time = 1000) {
 void turnRight(int time = 600) {
   dezibot.display.clear();
   dezibot.display.println("turnRight");
-  delay(3000);
   // Turn bot to the right
   dezibot.motion.left.setSpeed(5000);
   delay(MOVE_CORR_TIME);
@@ -512,16 +429,17 @@ int getLightIntensityForDistanceAndAngle(int angle, int d, int surLight) {
  * @return Correction value
  */
 int correction(int distance, int angle, int surLight) {
-  return 16.8749200510 * distance +
-           18.0775651617 * angle +
-           -0.4261869687 * surLight +
-           -0.4908125174 * distance*distance+
-           -0.4165971291 * distance*angle +
-           0.0090412139 * distance*surLight +
-           -6.6602390307 * angle*angle +
-           -0.0015898345 * angle*surLight +
-           0.0001855537 * surLight*surLight +
-           -58.1261723416;
+  return  0; 
+  16.8749200510 * distance +
+          //  18.0775651617 * angle +
+          //  -0.4261869687 * surLight +
+          //  -0.4908125174 * distance*distance+
+          //  -0.4165971291 * distance*angle +
+          //  0.0090412139 * distance*surLight +
+          //  -6.6602390307 * angle*angle +
+          //  -0.0015898345 * angle*surLight +
+          //  0.0001855537 * surLight*surLight +
+          //  -58.1261723416;
 }
 
 /**
@@ -949,4 +867,51 @@ void locateBotBasedOnLed(int led) {
       }
     }
   }
+}
+
+
+
+void loop() {
+  // moveForward();
+  if(iterations == 10) {
+    iterations = 0;
+    updateCoordAndGlobalAngle();
+  } else {
+    iterations ++;
+  }
+  //color movement
+  uint16_t colorValueRed = dezibot.colorDetection.getColorValue(VEML_RED);
+  uint16_t colorValueBlue = dezibot.colorDetection.getColorValue(VEML_BLUE);
+  uint16_t colorValueGreen = dezibot.colorDetection.getColorValue(VEML_GREEN);
+  uint16_t colorValueWhite = dezibot.colorDetection.getColorValue(VEML_WHITE);
+  float colorGreenWhiteRatio = float(colorValueGreen) / float(colorValueWhite);
+  if (colorValueWhite < 1200){
+    dezibot.display.println("silent mode");
+    dezibot.motion.stop();
+  }
+   else if ((colorValueRed > colorValueGreen) && (colorValueRed > colorValueBlue) && (colorValueRed > colorValueWhite / 2)) {
+    dezibot.display.println("red, left turn");
+    turnLeft(500);
+  }
+  else if ((colorValueGreen > colorValueRed) && (colorValueGreen > colorValueBlue) && (colorGreenWhiteRatio > float(0.7))) {
+    dezibot.display.println("green");
+    turnRight(500);
+  }
+  else if ((colorValueBlue > colorValueRed) && (colorValueBlue > colorValueGreen) && (colorValueBlue > colorValueWhite / 2)) {
+    dezibot.display.println("blau");
+    dezibot.display.println((colorValueWhite / 2 ) - colorValueBlue);
+    moveForward(500);
+  }
+  // else if ((colorValueBlue + colorValueRed + colorValueGreen) * float(0.64) < colorValueWhite){
+    else if (colorValueWhite > 4000){
+    dezibot.display.println("white");
+    dezibot.display.println((colorValueBlue + colorValueRed + colorValueGreen) * 2 / 3 ); 
+    dezibot.motion.stop();
+  } else {
+    dezibot.display.println("delay");
+    dezibot.display.println((colorValueBlue + colorValueRed + colorValueGreen) * 2 / 3 ); 
+    delay(READ_DELAY);
+  }
+  sendCommand(9, empty, 0, "estL x " + String(estimatedLocation.coord.x) + " y " + String(estimatedLocation.coord.y) + " a " + String(estimatedLocation.angle));
+  delay(1000);
 }
