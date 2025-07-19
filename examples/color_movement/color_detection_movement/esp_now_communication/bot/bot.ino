@@ -14,7 +14,7 @@
 #define X_LED_COUNT 29
 #define Y_LED_COUNT 20
 #define NUMBER_OF_LEDS 98
-#define ACCEPTED_LIGHT_DIFF 20
+#define ACCEPTED_LIGHT_DIFF 30
 #define MAX_LED_LIGHTS 10
 #define MOVE_NORM_TIME 1000
 #define MOVE_CORR_TIME 200
@@ -157,7 +157,6 @@ void setup() {
   dezibot.display.println("ESP-NOW initialized");
   delay(1000);
   setupLedPos();
-  updateCoordAndGlobalAngle();
 }
 
 void updateLocationBasedOnEstimatedMove(float distance, int angle) {
@@ -472,8 +471,15 @@ int getPossibleLEDBasedOnCoordAndAngle(Location location) {
   // Top: LED 0-27 (x = 0 → MAX_X)
   if (225 <= angle && angle < 315) {
     dezibot.display.println("top");
+    // int sideAngle = angle -225;
+    // float percentage = sideAngle / 90;
+    // int ledAmount = MAX_X;
+    // int led = round(percentage * ledAmount);
+
     int index = int(float(x) / float(MAX_X) * X_LED_COUNT);
-    return index - 1;
+    int newIndex = index + cos(angle) * MAX_X ;
+    sendCommand(9, empty, 0, String(String(index) + " " + String(newIndex));
+    return newIndex;
   }
   // Right: LED 28-47 (y = 0 → MAX_Y)
   else if (angle >= 315 || angle < 45) {
@@ -523,19 +529,18 @@ void locatePossibleLocations(int led, int intensity, int surLight, Location loca
   }
   
   dezibot.display.println("find close location");
-  delay(10000);
   
   // Search surrounding area for better matches
   // Check 5cm grid around current location
-  for (int dx = -5; dx <= 5; dx++) {
+  for (int dx = -3; dx <= 3; dx++) {
     if ((location.coord.x + dx) < 1 || (location.coord.x + dx) >= MAX_X) {
       continue;  // Position outside arena bounds
     }
-    for (int dy = -5; dy <= 5; dy++) {
+    for (int dy = -3; dy <= 3; dy++) {
       if ((location.coord.y + dy) < 1 || (location.coord.y + dy) >= MAX_Y) {
         continue;  // Position outside arena bounds
       }
-      for (int dangle = -15; dangle <= 15; dangle += 5) {
+      for (int dangle = -12; dangle <= 12; dangle += 3) {
         int corrAngle = (location.angle + dangle + 360) % 360;
         Location candidate = {{location.coord.x + dx, location.coord.y + dy}, corrAngle};
         d = distance(ledPos[led], candidate.coord);
@@ -694,10 +699,6 @@ bool findLocationInPossibleLocations() {
           dezibot.display.print(possibleMatchingLocations[i].coord.y);
           delay(3000);
         }
-        else {
-          dezibot.display.println("kein dupe wowie");
-          delay(3000);
-        }
       }
     }
   }
@@ -801,7 +802,6 @@ void findBotInTheArena() {
   dezibot.display.println(String(getMaxIndex(ledLights, 5)));
   int possibleLed = leds[getMaxIndex(ledLights, 5)];
   dezibot.display.println(String(possibleLed));
-  delay(4000);
   locateBotBasedOnLed(possibleLed);
 }
 
@@ -867,11 +867,9 @@ void locateBotBasedOnLed(int led) {
   if (locateDistantLocation(led, ledLight, surLight, possibleLocation, 1)) {
     return;
   }
-  delay(2000);
   if (locateDistantLocation(led, ledLight, surLight, possibleLocation, 11)) {
     return;
   }
-  delay(10000);
   
   // For vertical sides, try larger distances
   int dir = getLEDSide(led);
