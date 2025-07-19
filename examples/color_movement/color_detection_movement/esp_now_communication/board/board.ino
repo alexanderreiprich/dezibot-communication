@@ -24,6 +24,7 @@ typedef struct {
   uint8_t ledIds[MAX_LED_LIGHTS];
   uint8_t numLeds; 
   uint32_t timestamp;
+  char msg[100];
 } RobotMessage;
 
 // Global variables
@@ -67,7 +68,7 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
     }
     
     // Process the command
-    processCommand(message.command, message.ledIds);
+    processCommand(message.command, message.ledIds, message.msg);
     lastProcessedId = message.messageId;
     
     // Send confirmation back to the bot
@@ -114,7 +115,7 @@ void loop() {
  * @param command Command type (1-8)
  * @param ledIds Array of LED IDs to control
  */
-void processCommand(uint8_t command, uint8_t ledIds[]) {
+void processCommand(uint8_t command, uint8_t ledIds[], char msg[100]) {
   switch(command) {
     case 1: // Start position check
       if (!positionCheckInProgress) {
@@ -184,6 +185,10 @@ void processCommand(uint8_t command, uint8_t ledIds[]) {
       turnOffEverything();
       break;
       
+    case 9:
+      Serial.println("Bot: " + String(msg));
+      break;
+    
     default:
       Serial.println("Unknown command: " + String(command));
       break;
