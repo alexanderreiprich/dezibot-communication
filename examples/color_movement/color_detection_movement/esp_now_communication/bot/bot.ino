@@ -10,7 +10,7 @@
 #define MAX_Y 32
 #define LED_OFFSET 61  // Offset for board communication
 #define MAX_MATCHES 50
-#define NORM_LIGHT 3.02  // Normalization factor for light intensity calculation
+#define NORM_LIGHT 1.958712  // Normalization factor for light intensity calculation, based on light intensity 10cm away from the led and no angle
 #define X_LED_COUNT 29
 #define Y_LED_COUNT 20
 #define NUMBER_OF_LEDS 98
@@ -19,6 +19,7 @@
 #define MOVE_NORM_TIME 1000
 #define MOVE_CORR_TIME 200
 #define MOVE_CORR_ANGLE 45
+#define NORM_MOVE_DISTANCE 1
 #define NORM_MOVE_DISTANCE 1
 #define NORM_MOVE_ANGLE 45
 
@@ -53,7 +54,7 @@ Location possibleMatchingLocations[MAX_MATCHES];
 int matchingLocationCount = 0;
 
 // LED positions array
-Coord ledPos[NUMBER_OF_LEDS-1];
+Coord ledPos[NUMBER_OF_LEDS];
 
 // Board communication address
 // TODO: make this configurable
@@ -161,22 +162,24 @@ void sendCommand(uint8_t cmd, const uint8_t ledIds[], uint8_t numLeds, String ms
 
 void loop() {
   // moveForward();
-  // int led = 123;
-  // Coord pos = Coord{25, 8};
-  // int botAngle = 90;
-  // int surLight = dezibot.lightDetection.getValue(DL_FRONT);
-  // uint8_t ledArr[1] = { (uint8_t)(led) };
-  // sendCommand(4, ledArr, 1);
-  // int actualLight = dezibot.lightDetection.getValue(DL_FRONT);
-  // float d = distance(ledPos[led - LED_OFFSET], pos);
-  // int angle = angleBetween(led - LED_OFFSET, ledPos[led- LED_OFFSET], pos, botAngle);
-  // int estimatedLight = getLightIntensityForDistanceAndAngle(angle, d, surLight);
-  // sendCommand(9, empty, 0, "actualLight: " + String(actualLight) +  " surLight: " + String(surLight) + " d: " + String(d) + " angle: " + String(angle) + " estimatedLight: " + String(estimatedLight));
-  // sendCommand(8, empty, 0);
-  // updateCoordAndGlobalAngle();
+  int led = 129;
+  Coord pos = Coord{15,5};
+  int botAngle = 90;
+  int surLight = dezibot.lightDetection.getValue(DL_FRONT);
+  uint8_t ledArr[1] = { (uint8_t)(led) };
+  sendCommand(4, ledArr, 1);
+  delay(100);
+  int actualLight = dezibot.lightDetection.getValue(DL_FRONT);
+  float d = distance(ledPos[led - LED_OFFSET], pos);
+  int angle = angleBetween(led - LED_OFFSET, ledPos[led- LED_OFFSET], pos, botAngle);
+  int estimatedLight = getLightIntensityForDistanceAndAngle(angle, d, surLight);
+  delay(100);
+  sendCommand(9, empty, 0, "actualLight: " + String(actualLight) +  " surLight: " + String(surLight) + " d: " + String(d) + " angle: " + String(angle) + " estimatedLight: " + String(estimatedLight));
+  sendCommand(9, empty, 0, String(String(ledPos[led - LED_OFFSET].x) + ", " + String(ledPos[led - LED_OFFSET].y)));
+  sendCommand(8, empty, 0);
+  updateCoordAndGlobalAngle();
   delay(1000);
 }
-
 
 void updateLocationBasedOnEstimatedMove(float distance, int angle) {
   dezibot.display.clear();
@@ -187,6 +190,30 @@ void updateLocationBasedOnEstimatedMove(float distance, int angle) {
   estimatedLocation.coord.y += distance * sin(angle_rad);
   estimatedLocation.angle = (estimatedLocation.angle + angle) % 360;
   sendCommand(9, empty, 0, "x: " + String(estimatedLocation.coord.x) + " y: " + String(estimatedLocation.coord.y) + " angle: " + String(estimatedLocation.angle));
+}
+
+void turnRight(int time = 1000) {
+  dezibot.display.clear();
+  dezibot.display.println("turnRight");
+  delay(3000);
+  // Turn bot to the left
+  dezibot.motion.right.setSpeed(5000);
+  delay(MOVE_CORR_TIME);
+  dezibot.motion.stop();
+  int correctedAngle = round((26 * time) / 1000);
+  updateLocationBasedOnEstimatedMove(NORM_MOVE_DISTANCE*MOVE_CORR_TIME/MOVE_NORM_TIME, correctedAngle);
+}
+
+void turnLeft(int time = 600) {
+  dezibot.display.clear();
+  dezibot.display.println("turnLeft");
+  delay(3000);
+  // Turn bot to the right
+  dezibot.motion.left.setSpeed(5000);
+  delay(MOVE_CORR_TIME);
+  dezibot.motion.stop();
+  int correctedAngle = round((26 * time) / 600);
+  updateLocationBasedOnEstimatedMove(NORM_MOVE_DISTANCE*MOVE_CORR_TIME/MOVE_NORM_TIME, -correctedAngle);
 }
 
 /**
@@ -259,23 +286,24 @@ void moveForward () {
   }
 }
 
-void turnRight() {
+void correctRight(int time) {
   dezibot.display.clear();
-  sendCommand(9, empty, 0, "turnRight");
-  // Turn bot to the left
-  dezibot.motion.right.setSpeed(5000);
-  delay(MOVE_CORR_TIME);
-  dezibot.motion.stop();
-  // updateLocationBasedOnEstimatedMove(NORM_MOVE_DISTANCE*MOVE_CORR_TIME/MOVE_NORM_TIME, MOVE_CORR_ANGLE);
+  dezibot.display.println("correctRight");
+  delay(3000);
+  dezibot.motion.left.begin();
+  dezibot.motion.left.setSpeed(5000);
+  delay(time);
+  dezibot.motion.left.setSpeed(0);
 }
 
-void turnLeft() {
-  sendCommand(9, empty, 0, "turnLeft");
-  // Turn bot to the right
-  dezibot.motion.left.setSpeed(5000);
-  delay(MOVE_CORR_TIME);
-  dezibot.motion.stop();
-  // updateLocationBasedOnEstimatedMove(NORM_MOVE_DISTANCE*MOVE_CORR_TIME/MOVE_NORM_TIME, -MOVE_CORR_ANGLE);
+void correctLeft(int time) {
+  dezibot.display.clear();
+  dezibot.display.println("correctLeft");
+  delay(3000);
+  dezibot.motion.right.begin();
+  dezibot.motion.right.setSpeed(5000);
+  delay(time);
+  dezibot.motion.right.setSpeed(0);
 }
 
 void moveAction (int millis) {
@@ -296,33 +324,40 @@ void setupLedPos() {
   sendCommand(8, empty, 0);  // Turn off all LEDs
 
   float x_value = 0;
-  float y_value = float(MAX_Y);
-  float x_diff = float(X_LED_COUNT) / float(MAX_X);
-  float y_diff = float(Y_LED_COUNT) / float(MAX_Y);
-  
+  float y_value = MAX_Y;
+  float x_diff = float(MAX_X) / float(X_LED_COUNT);
+  float y_diff = float(MAX_Y) / float(Y_LED_COUNT);
+
   // Map LEDs to coordinates around the perimeter
-  // Top side (LEDs 0-27)
-  for (int i = 1; i <= X_LED_COUNT; i++) {
+  
+  // Top side
+  for (int i = 0; i < X_LED_COUNT; i++) {
     x_value += x_diff;
-    ledPos[i] = Coord{x_value, MAX_Y};
+    ledPos[i].x = x_value;
+    ledPos[i].y = MAX_Y;
   }
   
-  // Right side (LEDs 28-47)
-  for (int i = X_LED_COUNT + 1; i <= X_LED_COUNT + Y_LED_COUNT; i++) {
+  // Right side
+  for (int i = X_LED_COUNT; i < X_LED_COUNT + Y_LED_COUNT; i++) {
     y_value -= y_diff;
-    ledPos[i] = Coord{MAX_X, y_value};
+    ledPos[i].x = MAX_X;
+    ledPos[i].y = y_value;
+
   }
   
-  // Bottom side (LEDs 48-75)
-  for (int i = X_LED_COUNT + Y_LED_COUNT + 1; i <= X_LED_COUNT * 2 + Y_LED_COUNT; i++) {
+  // Bottom side
+  for (int i = X_LED_COUNT + Y_LED_COUNT; i < X_LED_COUNT * 2 + Y_LED_COUNT; i++) {
     x_value -= x_diff;
-    ledPos[i] = Coord{x_value, 0};
+    ledPos[i].x = x_value;
+    ledPos[i].y = 0;
+    
   }
-  
-  // Left side (LEDs 76-97)
-  for (int i = X_LED_COUNT * 2 + Y_LED_COUNT + 1; i < NUMBER_OF_LEDS; i++) {
+
+  // Left side
+  for (int i = X_LED_COUNT * 2 + Y_LED_COUNT; i < NUMBER_OF_LEDS; i++) {
     y_value += y_diff;
-    ledPos[i] = Coord{0, y_value};
+    ledPos[i].x = 0;
+    ledPos[i].y = y_value;
   }
 }
 
