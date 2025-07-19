@@ -140,29 +140,25 @@ void processCommand(uint8_t command, uint8_t ledIds[], char msg[100]) {
       break;
 
     case 5: // Turn on all sides sequentially
-      // Right side
+      // Top side
       turnOnSides(0);
       delay(1000);
       turnOffEverything();
-      delay(1000);
       
-      // Bottom side
+      // Right side
       turnOnSides(1);
       delay(1000);
       turnOffEverything();
-      delay(1000);
       
-      // Left side
+      // Bottom side
       turnOnSides(2);
       delay(1000);
       turnOffEverything();
-      delay(1000);
       
-      // Top side
+      // Left side
       turnOnSides(3);
       delay(1000);
       turnOffEverything();
-      delay(1000);
       break;
 
     case 6: // Turn on specific side
@@ -201,7 +197,16 @@ void processCommand(uint8_t command, uint8_t ledIds[], char msg[100]) {
  */
 void turnOnSides(int side) {
   switch(side) {
-    case 0: // Right side (top to bottom)
+    case 0: // Top side (left to right)
+      for (int i = cornerTopLeft + 2; i < cornerTopRight - 2; i = i + 4) {
+        leds[i] = CRGB::White;
+      }
+      Serial.println("Turned on top side");
+      FastLED.show();
+      break;
+
+      
+    case 1: // Right side (top to bottom)
       for (int i = cornerTopRight + 2; i < cornerBottomRight - 2; i = i + 4) {
         leds[i] = CRGB::White;
       }
@@ -209,7 +214,7 @@ void turnOnSides(int side) {
       FastLED.show();
       break;
       
-    case 1: // Bottom side (right to left)
+    case 2: // Bottom side (right to left)
       for (int i = cornerBottomRight + 2; i < cornerBottomLeft - 2; i = i + 4) {
         leds[i] = CRGB::White;
       }
@@ -217,19 +222,12 @@ void turnOnSides(int side) {
       FastLED.show();
       break;
       
-    case 2: // Left side (bottom to top)
+      
+    case 3: // Left side (bottom to top)
       for (int i = cornerBottomLeft + 2; i < END_LED - 1; i = i + 4) {
         leds[i] = CRGB::White;
       }
       Serial.println("Turned on left side");
-      FastLED.show();
-      break;
-      
-    case 3: // Top side (left to right)
-      for (int i = cornerTopLeft + 2; i < cornerTopRight - 2; i = i + 4) {
-        leds[i] = CRGB::White;
-      }
-      Serial.println("Turned on top side");
       FastLED.show();
       break;
       
