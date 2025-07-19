@@ -162,23 +162,61 @@ void sendCommand(uint8_t cmd, const uint8_t ledIds[], uint8_t numLeds, String ms
 
 void loop() {
   // moveForward();
-  int led = 129;
-  Coord pos = Coord{15,5};
-  int botAngle = 90;
-  int surLight = dezibot.lightDetection.getValue(DL_FRONT);
-  uint8_t ledArr[1] = { (uint8_t)(led) };
-  sendCommand(4, ledArr, 1);
-  delay(100);
-  int actualLight = dezibot.lightDetection.getValue(DL_FRONT);
-  float d = distance(ledPos[led - LED_OFFSET], pos);
-  int angle = angleBetween(led - LED_OFFSET, ledPos[led- LED_OFFSET], pos, botAngle);
-  int estimatedLight = getLightIntensityForDistanceAndAngle(angle, d, surLight);
-  delay(100);
-  sendCommand(9, empty, 0, "actualLight: " + String(actualLight) +  " surLight: " + String(surLight) + " d: " + String(d) + " angle: " + String(angle) + " estimatedLight: " + String(estimatedLight));
-  sendCommand(9, empty, 0, String(String(ledPos[led - LED_OFFSET].x) + ", " + String(ledPos[led - LED_OFFSET].y)));
-  sendCommand(8, empty, 0);
-  updateCoordAndGlobalAngle();
-  delay(1000);
+
+  //color movement
+  // uint16_t colorValueRed = dezibot.colorDetection.getColorValue(VEML_RED);
+  // uint16_t colorValueBlue = dezibot.colorDetection.getColorValue(VEML_BLUE);
+  // uint16_t colorValueGreen = dezibot.colorDetection.getColorValue(VEML_GREEN);
+  // uint16_t colorValueWhite = dezibot.colorDetection.getColorValue(VEML_WHITE);
+  // float colorGreenWhiteRatio = float(colorValueGreen) / float(colorValueWhite);
+  // if (colorValueWhite < 1200){
+  //   dezibot.display.print("silent mode");
+  //   dezibot.motion.stop();
+  // }
+  //  else if ((colorValueRed > colorValueGreen) && (colorValueRed > colorValueBlue) && (colorValueRed > colorValueWhite / 2)) {
+  //   dezibot.display.print("red, left turn");
+  //   turnLeft();
+  // }
+  // else if ((colorValueGreen > colorValueRed) && (colorValueGreen > colorValueBlue) && (colorGreenWhiteRatio > float(0.7))) {
+  //   dezibot.display.print("green");
+  //   turnRight();
+  // }
+  // else if ((colorValueBlue > colorValueRed) && (colorValueBlue > colorValueGreen) && (colorValueBlue > colorValueWhite / 2)) {
+  //   dezibot.display.print("blau");
+  //   dezibot.display.print((colorValueWhite / 2 ) - colorValueBlue);
+  //   moveForward();
+  // }
+  // // else if ((colorValueBlue + colorValueRed + colorValueGreen) * float(0.64) < colorValueWhite){
+  //   else if (colorValueWhite > 4000){
+  //   dezibot.display.print("white");
+  //   dezibot.display.print((colorValueBlue + colorValueRed + colorValueGreen) * 2 / 3 ); 
+  //   dezibot.motion.stop();
+  // } else {
+  //   dezibot.display.print("delay");
+  //   dezibot.display.print((colorValueBlue + colorValueRed + colorValueGreen) * 2 / 3 ); 
+  //   delay(READ_DELAY);
+  }
+  // int led = 126;
+  // Coord pos = Coord{18,18};
+  // int botAngle = 90;
+  // int surLight = dezibot.lightDetection.getValue(DL_FRONT);
+  // uint8_t ledArr[1] = { (uint8_t)(led) };
+  // sendCommand(4, ledArr, 1);
+  // delay(100);
+  // int actualLight = dezibot.lightDetection.getValue(DL_FRONT);
+  // float d = distance(ledPos[led - LED_OFFSET], pos);
+  // int angle = angleBetween(led - LED_OFFSET, ledPos[led- LED_OFFSET], pos, botAngle);
+  // int estimatedLight = getLightIntensityForDistanceAndAngle(angle, d, surLight);
+  // delay(100);
+  // sendCommand(9, empty, 0, "actualLight: " + String(actualLight) +  " surLight: " + String(surLight) + " d: " + String(d) + " angle: " + String(angle) + " estimatedLight: " + String(estimatedLight));
+  // sendCommand(9, empty, 0, String(String(ledPos[led - LED_OFFSET].x) + ", " + String(ledPos[led - LED_OFFSET].y)));
+  // sendCommand(8, empty, 0);
+  //  dezibot.display.println("l: ");
+  // dezibot.display.print(surLight);
+  // dezibot.display.print(" ");
+  // dezibot.display.println(actualLight);
+  // updateCoordAndGlobalAngle();
+  delay(10000);
 }
 
 void updateLocationBasedOnEstimatedMove(float distance, int angle) {
@@ -435,19 +473,29 @@ int angleBetween(int led, Coord from, Coord to, int globalAngle) {
  */
 int getLightIntensityForDistanceAndAngle(int angle, int d, int surLight) {
   float rad = radians(angle);
-  int expectedIntensity = surLight + NORM_LIGHT * cos(rad) * 10000 / (d * d) + correction(d, rad);
-  sendCommand(9, empty, 0, "getLightIntensityForDistanceAndAngle sL: " + String(surLight) + " d: " + String(d) + " cos: " + String(cos(rad)) + " cor: " + String(correction(d,rad)) + " eL: " + String(expectedIntensity));
+  int expectedIntensity = surLight + NORM_LIGHT * cos(rad) * 10000 / (d * d) + correction(d, angle, surLight);
+  sendCommand(9, empty, 0, "getLightIntensityForDistanceAndAngle sL: " + String(surLight) + " d: " + String(d) + " cos: " + String(cos(rad)) + " cor: " + String(correction(d,angle, surLight)) + " eL: " + String(expectedIntensity));
   return expectedIntensity;
 }
 
 /**
  * Correction factor for light intensity calculation
- * @param d Distance
+ * @param distance Distance
  * @param rad Angle in radians
+ * @param surLight surrounding light with all leds turned off
  * @return Correction value
  */
-int correction(int d, float rad) {
-  return 0; // int(-52.236 * d + -119.130 * cos(rad) + 1003.007);
+int correction(int distance, int angle, int surLight) {
+  return 16.8749200510 * distance +
+           18.0775651617 * angle +
+           -0.4261869687 * surLight +
+           -0.4908125174 * distance*distance+
+           -0.4165971291 * distance*angle +
+           0.0090412139 * distance*surLight +
+           -6.6602390307 * angle*angle +
+           -0.0015898345 * angle*surLight +
+           0.0001855537 * surLight*surLight +
+           -58.1261723416;
 }
 
 /**
