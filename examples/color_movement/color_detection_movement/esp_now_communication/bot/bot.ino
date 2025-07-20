@@ -157,6 +157,10 @@ void setup() {
   dezibot.display.println("ESP-NOW initialized");
   delay(1000);
   setupLedPos();
+  // Location loc = Location{Coord{25, 16}, 0};
+  // int led = getPossibleLEDBasedOnCoordAndAngle(loc);
+  // uint8_t ledId[1] = {led + LED_OFFSET};
+  // sendCommand(4, ledId, 1);
 }
 
 void updateLocationBasedOnEstimatedMove(float distance, int angle) {
@@ -467,38 +471,59 @@ int getPossibleLEDBasedOnCoordAndAngle(Location location) {
   int x = location.coord.x;
   int y = location.coord.y;
 
-  // Determine which side the bot is facing and calculate corresponding LED
-  // Top: LED 0-27 (x = 0 → MAX_X)
-  if (225 <= angle && angle < 315) {
-    dezibot.display.println("top");
-    // int sideAngle = angle -225;
-    // float percentage = sideAngle / 90;
-    // int ledAmount = MAX_X;
-    // int led = round(percentage * ledAmount);
+  float dx = cos(angle * PI / 180.0);
+  float dy = sin(angle * PI / 180.0);
 
-    int index = int(float(x) / float(MAX_X) * X_LED_COUNT);
-    int newIndex = index + cos(angle) * MAX_X ;
-    sendCommand(9, empty, 0, String(String(index) + " " + String(newIndex));
-    return newIndex;
+  // If dx or dy are really small, set them to 0 to avoid rounding problems in corners
+  float epsilon = 1e-10;
+  if (abs(dx) < epsilon) dx = 0.0;
+  if (abs(dy) < epsilon) dy = 0.0;
+
+  float t = INFINITY;
+  int side = -1;
+
+  if (dy > epsilon && (MAX_Y - y) / dy > 0 && (MAX_Y-y) / dy < t) {
+      t = (MAX_Y - y) / dy;
+      side = 0;
   }
-  // Right: LED 28-47 (y = 0 → MAX_Y)
-  else if (angle >= 315 || angle < 45) {
-    dezibot.display.println("right");
-    int index = X_LED_COUNT + int(float(y) / float(MAX_Y) * Y_LED_COUNT);
-    return index - 1;
+  // Right  
+  if (dx > epsilon && (MAX_X - x)/dx > 0 && (MAX_X-x)/dx < t) {
+      t = (MAX_X-x) / dx;
+      side = 1;
   }
-  // Bottom: LED 48-75 (x = MAX_X → 0)
-  else if ( 45 <= angle && angle < 135) {
-    dezibot.display.println("bottom");
-    int index = X_LED_COUNT + Y_LED_COUNT + int(float(MAX_X - x) / float(MAX_X) * X_LED_COUNT);
-    return index - 1;
+  // Bottom
+  if (dy < epsilon && -y / dy > 0 && -y / dy < t) { 
+      t = -y / dy; 
+      side = 2; 
   }
-  // Left: LED 76-97 (y = MAX_Y → 0)
-  else {
-    dezibot.display.println("left");
-    int index = 2*X_LED_COUNT + Y_LED_COUNT + int(float(MAX_Y - y) / float(MAX_Y) * Y_LED_COUNT);
-    return index - 1;
+  // Left
+  if (dx < epsilon && -x / dx > 0 && -x / dx < t) { 
+      t = -x / dx; 
+      side = 3; 
   }
+  float hitX = x + t * dx;
+  float hitY = y + t * dy;
+
+  int localIndex;
+
+  switch(side) {
+      case 0: // Top (LEDs 0 bis X_LED_COUNT-1)
+          localIndex = floor(hitX * (X_LED_COUNT-1) / MAX_X);
+          return localIndex;
+          
+      case 1: // Right (LEDs X_LED_COUNT bis X_LED_COUNT+Y_LED_COUNT-1)
+          localIndex = floor(hitY * (Y_LED_COUNT-1) / MAX_Y);
+          return X_LED_COUNT + localIndex;
+          
+      case 2: // Bottom (LEDs X_LED_COUNT+Y_LED_COUNT bis X_LED_COUNT+Y_LED_COUNT+X_LED_COUNT-1)
+          localIndex = floor((MAX_X-hitX) * (X_LED_COUNT-1) / MAX_X);
+          return X_LED_COUNT + Y_LED_COUNT + localIndex;
+          
+      case 3: // Left (LEDs X_LED_COUNT+Y_LED_COUNT+X_LED_COUNT bis Ende)
+          localIndex = floor((MAX_Y-hitY) * (Y_LED_COUNT-1) / MAX_Y);
+          return X_LED_COUNT + Y_LED_COUNT + X_LED_COUNT + localIndex;
+  }
+  return -1;
 }
 
 /**
@@ -883,7 +908,7 @@ void locateBotBasedOnLed(int led) {
 }
 
 void loop() {
-  // moveForward();
+  moveForward();
   if(iterations == 10) {
     iterations = 0;
     updateCoordAndGlobalAngle();
