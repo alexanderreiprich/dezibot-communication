@@ -247,22 +247,21 @@ void moveForward(int time = 1000) {
     sendCommand(9, empty, 0, String(d + "  " + estimatedLight));
     bool isRight = rightLight > endLight;
     // to prevent a full on circle in case the measured intensity is weird the correction stops after 4 correction moves
-    int count = 4;
+    int count = 3;
     sendCommand(9, empty, 0, String(estimatedLight - rightLight));
     sendCommand(9, empty, 0, String(ACCEPTED_LIGHT_DIFF));
 
     // sendCommand(9, empty, 0, "estL: " + String(estimatedLight) + " rL: " + String(rightLight) + " ldiff: " + String(fabs(estimatedLight - rightLight)));
-    while(fabs(estimatedLight - rightLight) > ACCEPTED_LIGHT_DIFF){
+    while(fabs(estimatedLight - rightLight) > ACCEPTED_LIGHT_DIFF && count > 0){
       delay(1000);
-      if(isRight && count > 0) {
-        count --;
+      count --;
+      if(isRight) {
         // The bot is drifting to the right -> correction to the left
         sendCommand(9, empty, 0, "turn left rl: " + String(rightLight) + " el: " + String(endLight));
 
         correctLeft(MOVE_CORR_TIME);
         
-      } else if(count > 0) {
-        count --;
+      } else {
         sendCommand(9, empty, 0, "turn right rl: " + String(rightLight) + " el: " + String(endLight));
         // The bot is drifting to the left -> correction to the right
         correctRight(MOVE_CORR_TIME);
@@ -271,7 +270,6 @@ void moveForward(int time = 1000) {
       // sendCommand(9, empty, 0, "estL: " + String(estimatedLight) + " rL: " + String(rightLight) + " ldiff: " + String(fabs(estimatedLight - rightLight)));
     
     }
-
     sendCommand(8, empty, 0);
   } else {
     updateCoordAndGlobalAngle();
@@ -280,8 +278,6 @@ void moveForward(int time = 1000) {
 
 void correctRight(int time) {
   dezibot.display.clear();
-  dezibot.display.println("correctRight");
-  delay(3000);
   dezibot.motion.left.begin();
   dezibot.motion.left.setSpeed(5000);
   delay(time);
@@ -290,8 +286,6 @@ void correctRight(int time) {
 
 void correctLeft(int time) {
   dezibot.display.clear();
-  dezibot.display.println("correctLeft");
-  delay(3000);
   dezibot.motion.right.begin();
   dezibot.motion.right.setSpeed(5000);
   delay(time);
@@ -465,8 +459,8 @@ double calcLightIntensityAngleCos(int led, Coord sensorPos, Coord ledPos, int gl
 int getLightIntensityForDistanceAndAngle(float cos, float d, int surLight) {
   // change from cm grid to m 
   float d_m = d / 100;
-  int expectedIntensity = surLight + NORM_LIGHT * cos / (d_m * d_m) + correction(d_m);
-  sendCommand(9, empty, 0, "getLightIntensityForDistanceAndAngle sL: " + String(surLight) + " d: " + String(d) + " cos: " + String(cos) + " cor: " + String(correction(d_m)) + " eL: " + String(expectedIntensity));
+  int expectedIntensity = surLight + NORM_LIGHT * cos / (d_m * d_m) + correction(d);
+  sendCommand(9, empty, 0, "getLightIntensityForDistanceAndAngle sL: " + String(surLight) + " d: " + String(d) + " cos: " + String(cos) + " cor: " + String(correction(d)) + " eL: " + String(expectedIntensity));
   return expectedIntensity;
 }
 
@@ -476,10 +470,11 @@ int getLightIntensityForDistanceAndAngle(float cos, float d, int surLight) {
  * @return Correction value
  */
 float correction(float distance) {
-  return 9.7526073814 * distance +
-          -0.8123091251 * distance * distance +
-           0.012758644883 * distance* distance* distance +
-           34.6799148574;
+   double inv_distance = 1.0 / distance;
+    double x0 = (inv_distance - 0.0759972064) / 0.0381503382;
+    double result = 0.8643417010 * x0 + 0.0301542091 * x0 * x0;
+    sendCommand(9, empty, 0, "correction d: " + String(distance) + " res: " + String( result * 69.1178872422 + 34.6799148574));
+    return -(result * 69.1178872422 + 34.6799148574);
 }
 
 /**
@@ -897,14 +892,13 @@ void locateBotBasedOnLed(int led) {
   
   // Measure surrounding light level
   int surLight = dezibot.lightDetection.getValue(DL_FRONT);
-
   uint8_t ledArr[1] = { (uint8_t)(led + LED_OFFSET) };
   sendCommand(4, ledArr, 1);
   delay(100);
 
   int ledLight = dezibot.lightDetection.getValue(DL_FRONT);
   Location possibleLocation = Location{Coord{ledLoc.x, ledLoc.y}, 0};
-
+  sendCommand(8, empty, 0);
   // Try different distances from the LED
   if (locateDistantLocation(led, ledLight, surLight, possibleLocation, 1)) {
     return;
